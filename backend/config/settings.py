@@ -163,6 +163,13 @@ EMAIL_OPEN_TRACKING_ENABLED = (
     os.getenv('EMAIL_OPEN_TRACKING_ENABLED', 'true').lower() == 'true'
 )
 
+# Controls how recipient mailbox existence is probed during email verification.
+#   none       (default) — syntax + MX only; safe for Vercel / any env where
+#                          outbound port 25 is blocked.
+#   smtp_local            — direct SMTP port-25 probe; suitable for local dev
+#                          where the ISP/network allows outbound port 25.
+EMAIL_VERIFICATION_PROVIDER = os.getenv('EMAIL_VERIFICATION_PROVIDER', 'none').strip().lower()
+
 # ── File / Attachment storage ─────────────────────────────────────────────────
 # Development: files stored locally in backend/attachments/
 # Production:  set USE_OBJECT_STORAGE=true and supply AWS_* / R2 credentials.
