@@ -19,8 +19,8 @@ Why the split:
     UNKNOWN → MX found but mailbox-level probe is unavailable or inconclusive
 
 Environment variables (all optional):
-  EMAIL_VERIFICATION_PROVIDER=none|smtp_local
-    none        (default) — skip direct SMTP probe; safe for Vercel
+  EMAIL_VERIFICATION_PROVIDER=mx_only|smtp_local
+    mx_only     (default) — skip direct SMTP probe; safe for Vercel
     smtp_local  — attempt direct SMTP port-25 probe; suitable for local dev
                   where the ISP does not block port 25
 
@@ -161,20 +161,18 @@ def verify_email_engine(email: str) -> Dict[str, Any]:
 
     # ── 3. Mailbox-level probe ────────────────────────────────────────────────
     # Read the verification provider from environment.
-    #   none        → skip SMTP probe (safe on Vercel)
+    #   mx_only     → skip SMTP probe (safe on Vercel), returns VALID if MX exists
     #   smtp_local  → attempt direct port-25 SMTP probe (local dev only)
-    provider = os.getenv('EMAIL_VERIFICATION_PROVIDER', 'none').strip().lower()
+    provider = os.getenv('EMAIL_VERIFICATION_PROVIDER', 'mx_only').strip().lower()
 
-    if provider == 'none':
+    if provider == 'mx_only':
         # Vercel / any environment where port-25 is blocked.
-        # MX exists → we know the domain can receive mail.  Mailbox-level
-        # existence is simply unknown without an external provider.
-        result['status'] = 'UNKNOWN'
+        # MX exists → we know the domain can receive mail. Mailbox-level
+        # existence is skipped. We return VALID so the frontend accepts it.
+        result['status'] = 'VALID'
         result['reason'] = (
-            "The domain has valid mail servers (MX records found). "
-            "Mailbox-level SMTP verification is unavailable in the current "
-            "deployment environment. The email address may still be valid — "
-            "please confirm by sending a test message."
+            "Email syntax is valid and the domain has valid MX records. "
+            "Individual mailbox existence was not checked."
         )
         return result
 

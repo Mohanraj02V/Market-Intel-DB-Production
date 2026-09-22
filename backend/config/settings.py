@@ -164,11 +164,11 @@ EMAIL_OPEN_TRACKING_ENABLED = (
 )
 
 # Controls how recipient mailbox existence is probed during email verification.
-#   none       (default) — syntax + MX only; safe for Vercel / any env where
+#   mx_only    (default) — syntax + MX only; safe for Vercel / any env where
 #                          outbound port 25 is blocked.
-#   smtp_local            — direct SMTP port-25 probe; suitable for local dev
+#   smtp_local           — direct SMTP port-25 probe; suitable for local dev
 #                          where the ISP/network allows outbound port 25.
-EMAIL_VERIFICATION_PROVIDER = os.getenv('EMAIL_VERIFICATION_PROVIDER', 'none').strip().lower()
+EMAIL_VERIFICATION_PROVIDER = os.getenv('EMAIL_VERIFICATION_PROVIDER', 'mx_only').strip().lower()
 
 # ── File / Attachment storage ─────────────────────────────────────────────────
 # Development: files stored locally in backend/attachments/
