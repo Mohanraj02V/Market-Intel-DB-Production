@@ -1,0 +1,36 @@
+[Unit]
+Description=MarketIntel Django / Gunicorn application
+After=network.target
+
+[Service]
+Type=notify
+User=marketintel
+Group=marketintel
+WorkingDirectory=/opt/marketintel/repo/backend
+
+# Load production environment from the .env file
+# The file must exist at /opt/marketintel/.env and must NOT be committed to Git.
+EnvironmentFile=/opt/marketintel/.env
+
+# Use the project virtual environment
+ExecStart=/opt/marketintel/venv/bin/gunicorn \
+    config.wsgi:application \
+    --bind 127.0.0.1:8000 \
+    --workers 2 \
+    --timeout 120 \
+    --graceful-timeout 30 \
+    --keep-alive 5 \
+    --log-level info \
+    --access-logfile - \
+    --error-logfile -
+
+# Restart policy
+Restart=on-failure
+RestartSec=5s
+
+# Prevent privilege escalation
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

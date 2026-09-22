@@ -504,9 +504,8 @@ class OutreachEmailViewSet(viewsets.ModelViewSet):
             f.seek(0)
 
         # Send via SMTP
-        # Explicit 30-second timeout prevents the request from hanging until the
-        # Vercel function limit when an SMTP server is slow or unresponsive.
         _SMTP_TIMEOUT = 30
+        server = None
         try:
             password = encryption.decrypt_password(mail_account.smtp_app_password_encrypted)
             if mail_account.smtp_security == 'SSL':
@@ -516,7 +515,6 @@ class OutreachEmailViewSet(viewsets.ModelViewSet):
                 server.starttls()
             server.login(mail_account.smtp_username, password)
             server.send_message(msg)
-            server.quit()
         except smtplib.SMTPRecipientsRefused as e:
             for rcpt_email, (code, msg_bytes) in e.recipients.items():
                 if code >= 500:
@@ -534,6 +532,12 @@ class OutreachEmailViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Email could not be delivered to one or more recipients. A verification task has been sent to PRE.'}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({'error': 'SMTP Send failed. Please verify configuration.'}, status=status.HTTP_400_BAD_REQUEST)
+        finally:
+            if server is not None:
+                try:
+                    server.quit()
+                except Exception:
+                    pass
 
         # Persistence
         outreach_email = OutreachEmail.objects.create(

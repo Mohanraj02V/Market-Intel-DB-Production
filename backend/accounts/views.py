@@ -61,6 +61,7 @@ class MailAccountViewSet(viewsets.ModelViewSet):
         folder = request.query_params.get('folder', 'INBOX')
         limit = int(request.query_params.get('limit', 20))
         
+        mail = None
         try:
             password = encryption.decrypt_password(mail_account.imap_app_password_encrypted)
             if mail_account.imap_security == 'SSL':
@@ -68,25 +69,24 @@ class MailAccountViewSet(viewsets.ModelViewSet):
             else:
                 mail = imaplib.IMAP4(mail_account.imap_host, mail_account.imap_port)
                 mail.starttls()
-                
+
             mail.login(mail_account.imap_username, password)
             status_code, messages = mail.select(folder)
-            
+
             if status_code != 'OK':
                 return Response({'error': f'Failed to select folder {folder}'}, status=status.HTTP_400_BAD_REQUEST)
-                
+
             status_code, response = mail.search(None, 'ALL')
             if status_code != 'OK':
-                mail.logout()
                 return Response({'error': 'Failed to search emails'}, status=status.HTTP_400_BAD_REQUEST)
-                
+
             msg_nums = response[0].split()
-            msg_nums = msg_nums[-limit:] # Get latest
-            msg_nums.reverse() # Newest first
-            
+            msg_nums = msg_nums[-limit:]  # Get latest
+            msg_nums.reverse()  # Newest first
+
             emails = []
             for num in msg_nums:
-                # Fetch headers only - very fast, no body download
+                # Fetch headers only — very fast, no body download
                 res_status, hdr_data = mail.fetch(num, '(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])')
                 if res_status != 'OK':
                     continue
@@ -113,12 +113,17 @@ class MailAccountViewSet(viewsets.ModelViewSet):
                     'from': from_hdr,
                     'date': date_hdr,
                 })
-            
-            mail.logout()
+
             return Response(emails, status=status.HTTP_200_OK)
-            
+
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        finally:
+            if mail is not None:
+                try:
+                    mail.logout()
+                except Exception:
+                    pass
 
     @action(detail=False, methods=['get'])
     def fetch_email_body(self, request):
@@ -135,6 +140,7 @@ class MailAccountViewSet(viewsets.ModelViewSet):
         if not email_id:
             return Response({'error': 'email_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        mail_conn = None
         try:
             password = encryption.decrypt_password(mail_account.imap_app_password_encrypted)
             if mail_account.imap_security == 'SSL':
@@ -147,7 +153,6 @@ class MailAccountViewSet(viewsets.ModelViewSet):
             mail_conn.select(folder)
 
             res_status, msg_data = mail_conn.fetch(email_id.encode(), '(RFC822)')
-            mail_conn.logout()
 
             if res_status != 'OK':
                 return Response({'error': 'Failed to fetch email body.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -189,6 +194,12 @@ class MailAccountViewSet(viewsets.ModelViewSet):
 
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        finally:
+            if mail_conn is not None:
+                try:
+                    mail_conn.logout()
+                except Exception:
+                    pass
 
     serializer_class = MailAccountSerializer
     permission_classes = [IsLQ]
@@ -213,15 +224,15 @@ class MailAccountViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='test-smtp')
     def test_smtp(self, request, pk=None):
         mail_account = self.get_object()
+        server = None
         try:
             password = encryption.decrypt_password(mail_account.smtp_app_password_encrypted)
             if mail_account.smtp_security == 'SSL':
-                server = smtplib.SMTP_SSL(mail_account.smtp_host, mail_account.smtp_port)
+                server = smtplib.SMTP_SSL(mail_account.smtp_host, mail_account.smtp_port, timeout=30)
             else:
-                server = smtplib.SMTP(mail_account.smtp_host, mail_account.smtp_port)
+                server = smtplib.SMTP(mail_account.smtp_host, mail_account.smtp_port, timeout=30)
                 server.starttls()
             server.login(mail_account.smtp_username, password)
-            server.quit()
             mail_account.smtp_status = 'VERIFIED'
             mail_account.save()
             return Response({'message': 'SMTP connection successful.'})
@@ -229,10 +240,17 @@ class MailAccountViewSet(viewsets.ModelViewSet):
             mail_account.smtp_status = 'FAILED'
             mail_account.save()
             return Response({'error': 'Unable to connect to SMTP server. Please verify the configuration.'}, status=status.HTTP_400_BAD_REQUEST)
+        finally:
+            if server is not None:
+                try:
+                    server.quit()
+                except Exception:
+                    pass
 
     @action(detail=True, methods=['post'], url_path='test-imap')
     def test_imap(self, request, pk=None):
         mail_account = self.get_object()
+        server = None
         try:
             password = encryption.decrypt_password(mail_account.imap_app_password_encrypted)
             if mail_account.imap_security == 'SSL':
@@ -241,7 +259,6 @@ class MailAccountViewSet(viewsets.ModelViewSet):
                 server = imaplib.IMAP4(mail_account.imap_host, mail_account.imap_port)
                 server.starttls()
             server.login(mail_account.imap_username, password)
-            server.logout()
             mail_account.imap_status = 'CONNECTED'
             mail_account.save()
             return Response({'message': 'IMAP connection successful.'})
@@ -249,3 +266,9 @@ class MailAccountViewSet(viewsets.ModelViewSet):
             mail_account.imap_status = 'FAILED'
             mail_account.save()
             return Response({'error': 'Unable to connect to IMAP server. Please verify the configuration.'}, status=status.HTTP_400_BAD_REQUEST)
+        finally:
+            if server is not None:
+                try:
+                    server.logout()
+                except Exception:
+                    pass
