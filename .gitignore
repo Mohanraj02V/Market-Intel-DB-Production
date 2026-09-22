@@ -1,0 +1,55 @@
+# ============================================================
+# Root .gitignore — MarketIntel
+# ============================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pdb
+
+# Virtual environments
+.venv/
+venv/
+env/
+backend/.venv/
+backend/venv/
+backend/env/
+
+# Environment secrets — NEVER commit
+.env
+.env.*
+!.env.example
+backend/.env
+frontend/.env.local
+frontend/.env.production.local
+frontend/.env.development.local
+
+# Django generated
+staticfiles/
+media/
+uploads/
+backend/attachments/
+
+# Node
+node_modules/
+frontend/node_modules/
+dist/
+build/
+frontend/dist/
+
+# Vercel
+.vercel/
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
