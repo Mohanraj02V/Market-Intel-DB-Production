@@ -160,6 +160,7 @@ const MarketEventForm = ({ isOpen, onClose, initialData = null }) => {
                   <input
                     type="date"
                     name="start_date"
+                    max="9999-12-31"
                     required
                     value={formData.start_date}
                     onChange={handleChange}
@@ -173,6 +174,7 @@ const MarketEventForm = ({ isOpen, onClose, initialData = null }) => {
                   <input
                     type="date"
                     name="end_date"
+                    max="9999-12-31"
                     required
                     value={formData.end_date}
                     onChange={handleChange}

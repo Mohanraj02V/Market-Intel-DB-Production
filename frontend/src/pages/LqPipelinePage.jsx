@@ -3,24 +3,27 @@ import { useDispatch, useSelector } from 'react-redux';
 import { 
   Building2, AlertTriangle, CheckCircle, Phone, Search, 
   CheckCircle2, AlertCircle, PlayCircle, RefreshCw,
-  FileEdit, Mail, XCircle
+  FileEdit, Mail, XCircle, Activity, Calendar, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { 
   fetchLqPipeline, 
   updateVerification, 
-  reportIssueToPre, 
   confirmReverification 
 } from '../features/lqPipeline/lqPipelineSlice';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import LqWorkspaceModal from '../components/lq/LqWorkspaceModal';
+import api from '../services/api';
 
-const LqPipelinePage = () => {
+const LqPipelinePage = ({ filter = 'all' }) => {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const { items, loading } = useSelector((state) => state.lqPipeline);
   
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [verificationFilter, setVerificationFilter] = useState('All');
+  
+  const [globalLogs, setGlobalLogs] = useState([]);
+  const [endDate, setEndDate] = useState('');
+  const [startDate, setStartDate] = useState('');
   
   const [selectedLq, setSelectedLq] = useState(null);
   const [showWorkspace, setShowWorkspace] = useState(false);
@@ -37,14 +40,69 @@ const LqPipelinePage = () => {
 
   useEffect(() => {
     dispatch(fetchLqPipeline());
+    api.get('/outreach/communications/')
+       .then(res => setGlobalLogs(res.data.results || res.data))
+       .catch(err => console.error('Failed to load global communications', err));
   }, [dispatch]);
 
+  const sortedGlobalLogs = [...globalLogs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const startObj = startDate ? new Date(startDate) : null;
+  if (startObj) startObj.setHours(0, 0, 0, 0);
+
+  const endObj = endDate ? new Date(endDate) : null;
+  if (endObj) endObj.setHours(23, 59, 59, 999);
+
+  const filteredDashboardLogs = (startObj && endObj)
+    ? sortedGlobalLogs.filter(log => {
+        const d = new Date(log.created_at);
+        return d >= startObj && d <= endObj;
+      })
+    : [];
+
+  // Group by prospect
+  const dashboardGrouped = {};
+  filteredDashboardLogs.forEach(log => {
+    if (!dashboardGrouped[log.prospect]) dashboardGrouped[log.prospect] = [];
+    dashboardGrouped[log.prospect].push(log);
+  });
+
+  const groupedDashboardProspects = Object.keys(dashboardGrouped).map(prospectIdStr => {
+    const prospectId = prospectIdStr;
+    const logs = dashboardGrouped[prospectIdStr];
+    
+    // Fallback: If it's in `items` we can still open the modal, but we rely on the log data for name/date
+    const lqItem = items.find(i => i.prospect?.id === prospectId);
+    
+    // We can just grab the company name and created date from the first log
+    const companyName = logs[0]?.prospect_company_name || 'Unknown Company';
+    const createdAt = logs[0]?.prospect_created_at || null;
+    
+    // Calculate breakdown
+    const breakdown = {};
+    logs.forEach(l => {
+      breakdown[l.activity_type] = (breakdown[l.activity_type] || 0) + 1;
+    });
+    
+    return {
+      prospectId,
+      lqItem,
+      companyName,
+      createdAt,
+      logs,
+      breakdown
+    };
+  });
+
   const filteredItems = items.filter(item => {
-    if (statusFilter !== 'All') {
-      if (statusFilter === 'Issue Sent to PRE' && item.pre_task_status !== 'ISSUE_SENT_TO_PRE') return false;
-      if (statusFilter !== 'Issue Sent to PRE' && item.verification_status !== statusFilter) return false;
-    }
-    if (verificationFilter !== 'All' && item.verification_status !== verificationFilter) return false;
+    // Submenu filter logic
+    if (filter === 'pending' && (item.verification_status !== 'Unverified' && item.verification_status !== 'In Progress')) return false;
+    if (filter === 'verified' && item.verification_status !== 'Verified') return false;
+    if (filter === 'issued' && item.pre_task_status !== 'ISSUE_SENT_TO_PRE') return false;
+
     if (searchTerm) {
       const s = searchTerm.toLowerCase();
       const p = item.prospect;
@@ -58,7 +116,13 @@ const LqPipelinePage = () => {
   const pipelineCount = items.length;
   const preIssuesCount = items.filter(i => i.pre_task_status === 'ISSUE_SENT_TO_PRE').length;
   const verifiedCount = items.filter(i => i.verification_status === 'Verified').length;
-  const totalOutreachLogsCount = 0;
+  
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayLogs = globalLogs.filter(log => new Date(log.created_at) >= todayStart);
+  
+  const emailsSentTodayCount = todayLogs.filter(log => log.activity_type === 'EMAIL_SENT').length;
+  const callsLoggedTodayCount = todayLogs.filter(log => log.activity_type === 'CALL' || log.activity_type === 'CALL_MADE').length;
 
   const openWorkspace = (lq) => {
     setSelectedLq(lq);
@@ -159,7 +223,7 @@ const LqPipelinePage = () => {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500">LQ Pipeline Prospects</span>
@@ -176,18 +240,100 @@ const LqPipelinePage = () => {
         </div>
         <div className="bg-white p-4 rounded-xl border border-emerald-200 bg-emerald-50/30 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-emerald-700">Verified Prospects</span>
+            <span className="text-xs font-semibold text-emerald-700">Outreached</span>
             <CheckCircle className="w-4 h-4 text-emerald-600" />
           </div>
           <p className="text-2xl font-black text-emerald-700 mt-1">{verifiedCount}</p>
         </div>
+        <div className="bg-white p-4 rounded-xl border border-indigo-200 bg-indigo-50/30 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-indigo-800">Calls Logged (Today)</span>
+            <Phone className="w-4 h-4 text-indigo-600" />
+          </div>
+          <p className="text-2xl font-black text-indigo-800 mt-1">{callsLoggedTodayCount}</p>
+        </div>
         <div className="bg-white p-4 rounded-xl border border-sky-200 bg-sky-50/30 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-sky-800">Outreach Activities</span>
-            <Phone className="w-4 h-4 text-sky-600" />
+            <span className="text-xs font-semibold text-sky-800">Emails Sent (Today)</span>
+            <Mail className="w-4 h-4 text-sky-600" />
           </div>
-          <p className="text-2xl font-black text-sky-800 mt-1">{totalOutreachLogsCount}</p>
+          <p className="text-2xl font-black text-sky-800 mt-1">{emailsSentTodayCount}</p>
         </div>
+      </div>
+
+      {/* Global Activity Dashboard */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden p-6">
+        <div className="flex items-center gap-4 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+            <Activity className="w-5 h-5 text-indigo-600" />
+          </div>
+          <div className="flex-1">
+            <h2 className="text-lg font-black text-slate-800">Global Activity Dashboard</h2>
+            <p className="text-xs font-semibold text-slate-500">Track outreach history across all prospects by date range.</p>
+          </div>
+          <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg shadow-sm px-1.5 py-1">
+            <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider pl-1.5 pr-1">Date Range:</label>
+            <input 
+              type="date" 
+              value={startDate}
+              max={new Date().toISOString().split('T')[0]}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                setEndDate('');
+              }}
+              className="px-2 py-1 bg-slate-50 rounded text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-slate-700"
+            />
+            <span className="text-slate-400 font-bold text-xs px-1">to</span>
+            <input 
+              type="date" 
+              max="9999-12-31"
+              min={startDate || undefined}
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              disabled={!startDate}
+              className="px-2 py-1 bg-slate-50 rounded text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-slate-700 disabled:opacity-50"
+            />
+          </div>
+        </div>
+
+        {startDate && endDate ? (
+          <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+            {groupedDashboardProspects.length > 0 ? (
+              groupedDashboardProspects.map(group => {
+                return (
+                  <div 
+                    key={group.prospectId} 
+                    className="bg-slate-50 border border-slate-200 rounded-lg overflow-hidden transition-all duration-200 shadow-sm px-4 py-2.5 flex items-center justify-between cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-100 group"
+                    onClick={() => navigate(`/outreach-activity/${group.prospectId}`)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <h4 className="font-extrabold text-slate-900 text-sm group-hover:text-indigo-700 transition-colors">{group.companyName}</h4>
+                        <p className="text-[10px] font-semibold text-slate-500 mt-0.5">
+                          {Object.entries(group.breakdown).map(([type, count]) => `${count} ${type.replace('_MADE', '').replace('_SENT', '')}`).join(' • ')}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-bold text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity">View Timeline &rarr;</span>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                <p className="text-sm font-semibold text-slate-500">No activities recorded on Day {dashboardDay}.</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="p-8 text-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+            <Activity className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+            <p className="text-sm font-semibold text-slate-500">
+              {startDate ? "Enter a Cadence Day number above to view activities for that day." : "Select a Start Date first to calculate Campaign Days."}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Table Container */}
@@ -204,20 +350,9 @@ const LqPipelinePage = () => {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
-              </div>
-              <select
-                value={verificationFilter}
-                onChange={(e) => setVerificationFilter(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              >
-                <option value="All">All Statuses</option>
-                <option value="Unverified">Unverified</option>
-                <option value="In Progress">In Progress</option>
-                <option value="Verified">Verified</option>
-              </select>
             </div>
-
           </div>
+        </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -235,7 +370,7 @@ const LqPipelinePage = () => {
                 const p = item.prospect;
                 const isIssue = item.pre_task_status === 'ISSUE_SENT_TO_PRE';
                 const isUpdated = item.pre_task_status === 'PRE_UPDATED';
-                const isBudgetFrozen = item.qualification_status === 'Budget Frozen';
+                const isLeadFreeze = item.qualification_status === 'Lead Freeze';
                 const isLeadQualified = item.qualification_status === 'Lead Qualified';
 
                 return (
@@ -252,6 +387,14 @@ const LqPipelinePage = () => {
                           <p className="text-[11px] text-slate-500 mt-0.5">
                             {p.country_head_office} &bull; {p.primary_industries}
                           </p>
+                          <div className="flex items-center gap-3 mt-1.5">
+                            <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                              Calls Logged: {item.calls_logged_count || 0}
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                              Emails Sent: {item.emails_sent_count || 0}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -287,17 +430,17 @@ const LqPipelinePage = () => {
                       ) : (
                         <button
                           onClick={() => openWorkspace(item)}
-                          disabled={isBudgetFrozen}
-                          title={isBudgetFrozen ? 'Outreach disabled — Prospect is Budget Frozen' : ''}
+                          disabled={isLeadFreeze}
+                          title={isLeadFreeze ? 'Outreach disabled — Prospect is Lead Freeze' : ''}
                           className={`px-3 py-1.5 rounded text-[11px] font-bold transition flex items-center gap-1 ml-auto ${
-                            isBudgetFrozen ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 
+                            isLeadFreeze ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 
                             isIssue ? 'bg-amber-600 hover:bg-amber-700 text-white' :
                             item.verification_status === 'Verified' ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 
                             'bg-slate-800 hover:bg-slate-900 text-white'
                           }`}
                         >
-                          {isBudgetFrozen ? (
-                            <><XCircle className="w-3 h-3 text-red-500" /><span className="text-red-500">Budget Frozen</span></>
+                          {isLeadFreeze ? (
+                            <><XCircle className="w-3 h-3 text-red-500" /><span className="text-red-500">Lead Freeze</span></>
                           ) : isLeadQualified ? (
                             <><CheckCircle className="w-4 h-4 text-emerald-500" /> <span className="text-emerald-500">Lead Qualified</span></>
                           ) : item.verification_status === 'Verified' ? (

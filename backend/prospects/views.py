@@ -1,5 +1,5 @@
 from django.utils import timezone
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view
 from accounts.permissions import IsPRE, IsLQ, IsPREOrLQ
 from rest_framework import viewsets, filters, status
 from rest_framework.response import Response
@@ -169,13 +169,17 @@ class LQPipelineViewSet(viewsets.ModelViewSet):
             updated = True
             
         if all_not_interested and latest_not_interested_date:
-            if timezone.now() >= latest_not_interested_date + datetime.timedelta(days=30):
-                if lq.qualification_status != LeadQualification.QualificationStatus.BUDGET_FROZEN:
-                    lq.qualification_status = LeadQualification.QualificationStatus.BUDGET_FROZEN
+            if timezone.now() < latest_not_interested_date + datetime.timedelta(days=30):
+                if lq.qualification_status != LeadQualification.QualificationStatus.LEAD_FREEZE:
+                    lq.qualification_status = LeadQualification.QualificationStatus.LEAD_FREEZE
+                    updated = True
+            else:
+                if lq.qualification_status == LeadQualification.QualificationStatus.LEAD_FREEZE:
+                    lq.qualification_status = LeadQualification.QualificationStatus.UNQUALIFIED
                     updated = True
         elif not all_not_interested and not all_lead_qualified:
             # Revert to UNQUALIFIED if consensus is broken
-            if lq.qualification_status in [LeadQualification.QualificationStatus.LEAD_QUALIFIED, LeadQualification.QualificationStatus.BUDGET_FROZEN]:
+            if lq.qualification_status in [LeadQualification.QualificationStatus.LEAD_QUALIFIED, LeadQualification.QualificationStatus.LEAD_FREEZE]:
                 lq.qualification_status = LeadQualification.QualificationStatus.UNQUALIFIED
                 updated = True
 
@@ -287,6 +291,62 @@ class CallbackReminderViewSet(viewsets.ModelViewSet):
             reminder.notified_5m = True
         reminder.save()
         return Response(self.get_serializer(reminder).data)
+
+from .models import Meeting
+from .serializers import MeetingSerializer
+
+class MeetingViewSet(viewsets.ModelViewSet):
+    serializer_class = MeetingSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        queryset = Meeting.objects.filter(is_completed=False).order_by('scheduled_datetime')
+        # Superusers see all meetings
+        if user.is_superuser:
+            return queryset
+        # LQ users: filter meetings by prospects assigned to them via distribution
+        if hasattr(user, 'profile') and user.profile.role == 'LQ':
+            from django.contrib.auth import get_user_model
+            from django.db.models import Subquery, OuterRef
+            User = get_user_model()
+            lq_users = list(User.objects.filter(
+                profile__role='LQ', is_superuser=False
+            ).order_by('id').values_list('id', flat=True))
+            if user.id in lq_users:
+                N = len(lq_users)
+                current_index = lq_users.index(user.id)
+                # Get all prospect IDs in batches of 5
+                all_prospects = list(
+                    Prospect.objects.order_by('created_at', 'id').values_list('id', flat=True)
+                )
+                my_prospect_ids = [
+                    pid for i, pid in enumerate(all_prospects)
+                    if ((i // 5) % N) == current_index
+                ]
+                return queryset.filter(prospect_id__in=my_prospect_ids)
+            return queryset.none()
+        # PRE or other roles: show all meetings
+        return queryset
+
+    @action(detail=False, methods=['get'], url_path='pending')
+    def pending(self, request):
+        meetings = self.get_queryset()
+        return Response(self.get_serializer(meetings, many=True).data)
+
+
+    @action(detail=True, methods=['patch'], url_path='mark-notified')
+    def mark_notified(self, request, pk=None):
+        meeting = self.get_object()
+        interval = request.data.get('interval')
+        if interval == '1h':
+            meeting.notified_1h = True
+        elif interval == '30m':
+            meeting.notified_30m = True
+        elif interval == '15m':
+            meeting.notified_15m = True
+        meeting.save()
+        return Response(self.get_serializer(meeting).data)
 
 
 class ProspectContactViewSet(viewsets.ModelViewSet):
@@ -503,41 +563,44 @@ class OutreachEmailViewSet(viewsets.ModelViewSet):
             msg.add_attachment(f.read(), maintype='application', subtype='octet-stream', filename=f.name)
             f.seek(0)
 
-        # Send via SMTP
-        _SMTP_TIMEOUT = 30
-        server = None
-        try:
-            password = encryption.decrypt_password(mail_account.smtp_app_password_encrypted)
-            if mail_account.smtp_security == 'SSL':
-                server = smtplib.SMTP_SSL(mail_account.smtp_host, mail_account.smtp_port, timeout=_SMTP_TIMEOUT)
-            else:
-                server = smtplib.SMTP(mail_account.smtp_host, mail_account.smtp_port, timeout=_SMTP_TIMEOUT)
-                server.starttls()
-            server.login(mail_account.smtp_username, password)
-            server.send_message(msg)
-        except smtplib.SMTPRecipientsRefused as e:
-            for rcpt_email, (code, msg_bytes) in e.recipients.items():
-                if code >= 500:
-                    verification = EmailVerification.objects.filter(prospect=prospect, email_address=rcpt_email).first()
-                    if verification:
-                        verification.verification_status = 'INVALID'
-                        verification.reason = f'Permanent SMTP failure: {code} {msg_bytes.decode("utf-8", errors="ignore")}'
-                        verification.save()
+        # Send via SMTP in background
+        def send_smtp():
+            import smtplib
+            import utils.encryption as encryption
+            
+            _SMTP_TIMEOUT = 30
+            server = None
+            try:
+                password = encryption.decrypt_password(mail_account.smtp_app_password_encrypted)
+                if mail_account.smtp_security == 'SSL':
+                    server = smtplib.SMTP_SSL(mail_account.smtp_host, mail_account.smtp_port, timeout=_SMTP_TIMEOUT)
+                else:
+                    server = smtplib.SMTP(mail_account.smtp_host, mail_account.smtp_port, timeout=_SMTP_TIMEOUT)
+                    server.starttls()
+                server.login(mail_account.smtp_username, password)
+                server.send_message(msg)
+            except smtplib.SMTPRecipientsRefused as e:
+                for rcpt_email, (code, msg_bytes) in e.recipients.items():
+                    if code >= 500:
+                        verification = EmailVerification.objects.filter(prospect=prospect, email_address=rcpt_email).first()
+                        if verification:
+                            verification.verification_status = 'INVALID'
+                            verification.reason = f'Permanent SMTP failure: {code} {msg_bytes.decode("utf-8", errors="ignore")}'
+                            verification.save()
 
-                        lq = prospect.lead_qualification
-                        lq.pre_task_status = LeadQualification.PreTaskStatus.ISSUE_SENT_TO_PRE
-                        lq.issue_category = 'Email Verification'
-                        lq.issue_details = f"Email could not be delivered to {rcpt_email}. Verification updated to Invalid."
-                        lq.save()
-            return Response({'error': 'Email could not be delivered to one or more recipients. A verification task has been sent to PRE.'}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return Response({'error': 'SMTP Send failed. Please verify configuration.'}, status=status.HTTP_400_BAD_REQUEST)
-        finally:
-            if server is not None:
-                try:
-                    server.quit()
-                except Exception:
-                    pass
+                            lq = prospect.lead_qualification
+                            lq.pre_task_status = LeadQualification.PreTaskStatus.ISSUE_SENT_TO_PRE
+                            lq.issue_category = 'Email Verification'
+                            lq.issue_details = f"Email could not be delivered to {rcpt_email}. Verification updated to Invalid."
+                            lq.save()
+            except Exception as e:
+                print(f"Background SMTP send failed: {e}")
+            finally:
+                if server is not None:
+                    try:
+                        server.quit()
+                    except Exception:
+                        pass
 
         # Persistence
         outreach_email = OutreachEmail.objects.create(
@@ -595,6 +658,11 @@ class OutreachEmailViewSet(viewsets.ModelViewSet):
             prospect.lead_qualification.email_status = 'Waiting for Response'
             prospect.lead_qualification.save()
 
+        # Start the background SMTP send
+        import threading
+        t = threading.Thread(target=send_smtp)
+        t.start()
+
         serializer = self.get_serializer(outreach_email)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -616,3 +684,84 @@ class EmailTrackingView(View):
             pass  # Fail silently to avoid leaking info or breaking the pixel
 
         return HttpResponse(PIXEL_GIF_DATA, content_type='image/gif')
+
+@api_view(['GET'])
+def pre_dashboard_stats(request):
+    user = request.user
+    if not user.is_authenticated or (not user.is_superuser and getattr(user, 'profile', None) and user.profile.role != 'PRE'):
+        return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+        
+    import calendar
+    import datetime
+    
+    now = timezone.now()
+    year = now.year
+    month = now.month
+    
+    total_days = calendar.monthrange(year, month)[1]
+    
+    # Calculate working days by only subtracting the 4 holidays from the total days in the month (30 or 31)
+    holidays = 4
+    working_days = total_days - holidays
+    if working_days <= 0:
+        working_days = 1 # Fallback
+        
+    monthly_target = 1560
+    daily_target = monthly_target / working_days
+    
+    # Entered Today
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    entered_today = Prospect.objects.filter(created_by=user.username, created_at__gte=today_start).count()
+    
+    # Entered This Month
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    entered_this_month = Prospect.objects.filter(created_by=user.username, created_at__gte=month_start).count()
+    
+    # Lead Qualified Count (total ever)
+    total_entered = Prospect.objects.filter(created_by=user.username).count()
+    total_lq = LeadQualification.objects.filter(prospect__created_by=user.username, qualification_status='Lead Qualified').count()
+    total_lq_attended = LeadQualification.objects.filter(prospect__created_by=user.username).exclude(verification_status='Unverified', qualification_status='Unqualified').count()
+    from django.db.models import Q, Exists, OuterRef
+    from .models import CallActivity
+    total_unqualified = LeadQualification.objects.filter(
+        prospect__created_by=user.username
+    ).filter(
+        Q(qualification_status='Lead Freeze') |
+        (Q(qualification_status='Unqualified') & Exists(
+            CallActivity.objects.filter(
+                prospect=OuterRef('prospect'),
+                communication_outcome='Not Interested'
+            )
+        ))
+    ).count()
+    
+    # Current day in month for actual progress calculation
+    passed_days = now.day
+    # Assume holidays are evenly distributed, or just subtract a proportional amount
+    
+    # Assume holidays are evenly distributed, or just subtract a proportional amount
+    passed_working_days = passed_days - int(holidays * (passed_days / total_days))
+    if passed_working_days <= 0:
+        passed_working_days = 1
+        
+    daily_avg = (entered_today / daily_target) * 100 if daily_target else 0
+    monthly_avg = (entered_this_month / monthly_target) * 100 if monthly_target else 0
+    actual_progress = (entered_this_month / (daily_target * passed_working_days)) * 100 if passed_working_days else 0
+    
+    lq_percentage = (total_lq / total_entered) * 100 if total_entered else 0
+    
+    return Response({
+        'monthly_target': monthly_target,
+        'daily_target': round(daily_target, 2),
+        'working_days_in_month': working_days,
+        'entered_today': entered_today,
+        'entered_this_month': entered_this_month,
+        'total_entered': total_entered,
+        'total_lead_qualified': total_lq,
+        'lq_attended_prospects': total_lq_attended,
+        'unqualified_prospects': total_unqualified,
+        'daily_average': round(min(daily_avg, 100), 1),
+        'monthly_average': round(min(monthly_avg, 100), 1),
+        'actual_progress': round(actual_progress, 1),
+        'lead_qualified_percentage': round(lq_percentage, 1),
+    })

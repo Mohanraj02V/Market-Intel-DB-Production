@@ -181,8 +181,8 @@ const ProspectsPage = () => {
                         {prospect.qualification_status === 'Lead Qualified' && (
                           <CheckCircle className="w-4 h-4 text-emerald-500" title="Lead Qualified" />
                         )}
-                        {prospect.qualification_status === 'Budget Frozen' && (
-                          <XCircle className="w-4 h-4 text-red-500" title="Budget Frozen" />
+                        {prospect.qualification_status === 'Lead Freeze' && (
+                          <XCircle className="w-4 h-4 text-red-500" title="Lead Freeze" />
                         )}
                       </div>
                     </td>

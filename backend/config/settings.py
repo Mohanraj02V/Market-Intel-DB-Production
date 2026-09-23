@@ -18,7 +18,7 @@ ALLOWED_HOSTS = [
     if h.strip()
 ]
 
-# Trust Vercel's HTTPS proxy header so request.is_secure() works correctly.
+# Trust the proxy (Nginx) HTTPS header so request.is_secure() works correctly.
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # ── Applications ──────────────────────────────────────────────────────────────
@@ -74,7 +74,7 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 # ── Database ──────────────────────────────────────────────────────────────────
 # Local development: uses individual DB_* vars.
-# Production (Vercel + Supabase): uses DATABASE_URL.
+# Production (EC2 + Supabase): uses DATABASE_URL.
 _database_url = os.getenv('DATABASE_URL')
 
 if _database_url:
@@ -153,7 +153,7 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 # ── Email open tracking ───────────────────────────────────────────────────────
-# Set to the public backend URL in production (e.g. Vercel backend domain).
+# Set to the public backend URL in production (e.g. https://YOUR_BACKEND_DOMAIN).
 # For local development use http://localhost:8000 or a Cloudflare Quick Tunnel URL.
 EMAIL_TRACKING_BASE_URL = os.getenv(
     'EMAIL_TRACKING_BASE_URL', 'http://localhost:8000'
@@ -164,7 +164,7 @@ EMAIL_OPEN_TRACKING_ENABLED = (
 )
 
 # Controls how recipient mailbox existence is probed during email verification.
-#   mx_only    (default) — syntax + MX only; safe for Vercel / any env where
+#   mx_only    (default) — syntax + MX only; safe for EC2 / any env where
 #                          outbound port 25 is blocked.
 #   smtp_local           — direct SMTP port-25 probe; suitable for local dev
 #                          where the ISP/network allows outbound port 25.

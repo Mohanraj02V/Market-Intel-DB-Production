@@ -8,9 +8,14 @@ import MarketEventForm from '../components/marketEvents/MarketEventForm';
 const MarketEventsPage = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  
+
   const { items: events, loading, error, search } = useSelector((state) => state.marketEvents);
-  
+  const { user } = useSelector((state) => state.auth);
+
+  // PRE users (and superusers) can create, edit, and delete events.
+  // LQ users have read-only access enforced on both frontend and backend.
+  const canMutate = user?.role === 'PRE' || user?.is_superuser;
+
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
 
@@ -23,17 +28,20 @@ const MarketEventsPage = () => {
   };
 
   const handleAdd = () => {
+    if (!canMutate) return;
     setEditingEvent(null);
     setIsFormOpen(true);
   };
 
   const handleEdit = (event, e) => {
+    if (!canMutate) return;
     e.stopPropagation();
     setEditingEvent(event);
     setIsFormOpen(true);
   };
 
   const handleDelete = async (id, e) => {
+    if (!canMutate) return;
     e.stopPropagation();
     if (window.confirm("Delete this market event?\n\nAssociated event participation links will also be removed.")) {
       await dispatch(deleteMarketEvent(id));
@@ -61,13 +69,16 @@ const MarketEventsPage = () => {
             Track industry events and the prospects participating in each event.
           </p>
         </div>
-        <button
-          onClick={handleAdd}
-          className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-lg font-semibold text-sm shadow-sm hover:bg-indigo-700 active:bg-indigo-800 transition-colors shadow-indigo-600/20"
-        >
-          <Plus className="w-4 h-4" />
-          Add Market Event
-        </button>
+        {/* Add button — only visible to PRE/superuser */}
+        {canMutate && (
+          <button
+            onClick={handleAdd}
+            className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-lg font-semibold text-sm shadow-sm hover:bg-indigo-700 active:bg-indigo-800 transition-colors shadow-indigo-600/20"
+          >
+            <Plus className="w-4 h-4" />
+            Add Market Event
+          </button>
+        )}
       </div>
 
       {/* Filters/Search */}
@@ -126,8 +137,8 @@ const MarketEventsPage = () => {
                 </tr>
               ) : (
                 (events || []).map((event) => (
-                  <tr 
-                    key={event.id} 
+                  <tr
+                    key={event.id}
                     className="hover:bg-slate-50 transition-colors cursor-pointer group"
                     onClick={() => navigate(`/market-events/${event.id}`)}
                   >
@@ -152,6 +163,7 @@ const MarketEventsPage = () => {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {/* View — available to all */}
                         <button
                           onClick={(e) => { e.stopPropagation(); navigate(`/market-events/${event.id}`); }}
                           className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
@@ -159,20 +171,26 @@ const MarketEventsPage = () => {
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={(e) => handleEdit(event, e)}
-                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
-                          title="Edit"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={(e) => handleDelete(event.id, e)}
-                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {/* Edit — PRE/superuser only */}
+                        {canMutate && (
+                          <button
+                            onClick={(e) => handleEdit(event, e)}
+                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                            title="Edit"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        )}
+                        {/* Delete — PRE/superuser only */}
+                        {canMutate && (
+                          <button
+                            onClick={(e) => handleDelete(event.id, e)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -183,11 +201,14 @@ const MarketEventsPage = () => {
         </div>
       </div>
 
-      <MarketEventForm
-        isOpen={isFormOpen}
-        onClose={() => setIsFormOpen(false)}
-        initialData={editingEvent}
-      />
+      {/* Form modal — only rendered for PRE/superuser */}
+      {canMutate && (
+        <MarketEventForm
+          isOpen={isFormOpen}
+          onClose={() => setIsFormOpen(false)}
+          initialData={editingEvent}
+        />
+      )}
     </div>
   );
 };

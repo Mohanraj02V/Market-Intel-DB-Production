@@ -96,7 +96,7 @@ class LeadQualification(models.Model):
         QUALIFIED = 'Qualified', 'Qualified'
         NURTURE = 'Nurture', 'Nurture'
         DISQUALIFIED = 'Disqualified', 'Disqualified'
-        BUDGET_FROZEN = 'Budget Frozen', 'Budget Frozen'
+        LEAD_FREEZE = 'Lead Freeze', 'Lead Freeze'
         LEAD_QUALIFIED = 'Lead Qualified', 'Lead Qualified'
 
     class PreTaskStatus(models.TextChoices):
@@ -112,6 +112,7 @@ class LeadQualification(models.Model):
     verification_checklist = models.JSONField(default=dict, blank=True)
     email_status = models.CharField(max_length=50, default='Not Sent', blank=True, null=True)
 
+    attended_meeting = models.BooleanField(default=False)
     qualification_score = models.IntegerField(default=0)
     lq_notes = models.TextField(blank=True, null=True)
 
@@ -165,6 +166,23 @@ class CallbackReminder(models.Model):
 
     def __str__(self):
         return f"Reminder for {self.prospect.company_name} at {self.scheduled_datetime}"
+
+class Meeting(models.Model):
+    prospect = models.ForeignKey(Prospect, on_delete=models.CASCADE, related_name='meetings')
+    scheduled_datetime = models.DateTimeField()
+    meeting_link = models.CharField(max_length=512, blank=True, null=True)
+    agenda = models.TextField(blank=True, null=True)
+    is_completed = models.BooleanField(default=False)
+
+    notified_1h = models.BooleanField(default=False)
+    notified_30m = models.BooleanField(default=False)
+    notified_15m = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Meeting for {self.prospect.company_name} at {self.scheduled_datetime}"
 
 class OutreachEmail(models.Model):
     prospect = models.ForeignKey(Prospect, on_delete=models.CASCADE, related_name='outreach_emails')

@@ -19,6 +19,42 @@ import { fetchCommunications, sendOutreachEmail, recordCall, syncImap } from '..
 import { toast } from 'react-toastify';
 import api from '../../services/api';
 
+const TimeSelect = ({ value, onChange, className }) => {
+  const parseTime = (val) => {
+    if (!val) return { h: '12', m: '00', ampm: 'PM' };
+    let [hours, mins] = val.split(':');
+    let h = parseInt(hours, 10);
+    let ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12;
+    if (h === 0) h = 12;
+    return { h: h.toString().padStart(2, '0'), m: mins || '00', ampm };
+  };
+  const { h, m, ampm } = parseTime(value);
+
+  const updateTime = (newH, newM, newAmpm) => {
+    let hrs = parseInt(newH, 10);
+    if (newAmpm === 'PM' && hrs !== 12) hrs += 12;
+    if (newAmpm === 'AM' && hrs === 12) hrs = 0;
+    onChange(`${hrs.toString().padStart(2, '0')}:${newM}`);
+  };
+
+  return (
+    <div className={`flex items-center gap-1 ${className || ''}`}>
+      <select value={h} onChange={(e) => updateTime(e.target.value, m, ampm)} className="p-2 flex-1 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-center font-bold">
+        {Array.from({length: 12}, (_, i) => String(i+1).padStart(2, '0')).map(hr => <option key={hr} value={hr}>{hr}</option>)}
+      </select>
+      <span className="font-bold text-slate-700">:</span>
+      <select value={m} onChange={(e) => updateTime(h, e.target.value, ampm)} className="p-2 flex-1 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-center font-bold">
+        {Array.from({length: 60}, (_, i) => String(i).padStart(2, '0')).map(min => <option key={min} value={min}>{min}</option>)}
+      </select>
+      <select value={ampm} onChange={(e) => updateTime(h, m, e.target.value)} className="p-2 flex-1 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-center font-bold">
+        <option value="AM">AM</option>
+        <option value="PM">PM</option>
+      </select>
+    </div>
+  );
+};
+
 export default function LqWorkspaceModal({ 
   selectedLq,
   initialTab = 'verification',
@@ -62,9 +98,31 @@ export default function LqWorkspaceModal({
   // Key People selection for call
   const [selectedContactId, setSelectedContactId] = useState('');
   const [selectedContactData, setSelectedContactData] = useState(null);
+  const [generalCallSpokeTo, setGeneralCallSpokeTo] = useState('');
+  const [generalCallDesignation, setGeneralCallDesignation] = useState('');
 
   // Detailed Call Form Fields
   const [requestedEmailConfirm, setRequestedEmailConfirm] = useState(prospect?.official_email_address || '');
+  const [duplicateRequestedEmailContact, setDuplicateRequestedEmailContact] = useState(null);
+  const [newRequestedContactName, setNewRequestedContactName] = useState('');
+  const [newRequestedContactMobile, setNewRequestedContactMobile] = useState('');
+  const [newRequestedContactDesignation, setNewRequestedContactDesignation] = useState('');
+
+  useEffect(() => {
+    if (requestedEmailConfirm && requestedEmailConfirm.trim()) {
+      const found = prospect?.key_contacts?.find(c => 
+        c.official_email && c.official_email.toLowerCase() === requestedEmailConfirm.toLowerCase()
+      );
+      if (found) {
+        setDuplicateRequestedEmailContact(found);
+      } else {
+        setDuplicateRequestedEmailContact(null);
+      }
+    } else {
+      setDuplicateRequestedEmailContact(null);
+    }
+  }, [requestedEmailConfirm, prospect]);
+
   const [callbackDate, setCallbackDate] = useState('');
   const [callbackTime, setCallbackTime] = useState('');
   const [callbackDescription, setCallbackDescription] = useState('');
@@ -74,6 +132,7 @@ export default function LqWorkspaceModal({
   const [sharedContactDesignation, setSharedContactDesignation] = useState('');
   const [sharedContactPhone, setSharedContactPhone] = useState('');
   const [sharedContactEmail, setSharedContactEmail] = useState('');
+  const [attendedMeeting, setAttendedMeeting] = useState(false);
   
   const [duplicateContact, setDuplicateContact] = useState(null);
   const [useDuplicateContact, setUseDuplicateContact] = useState(false);
@@ -103,7 +162,6 @@ export default function LqWorkspaceModal({
 
   // Backend Outreach Logs State
   const [outreachLogs, setOutreachLogs] = useState([]);
-  
   // === KEY FIX: On mount, always fetch fresh LQ data + outreach logs from backend ===
   // This ensures that email_status and communication history are NOT stale from props
   useEffect(() => {
@@ -322,9 +380,19 @@ const handleAddCustomRecipient = (e) => {
 
     // === VALIDATION ===
     // 1. If 'Connected', must select a communication outcome
-    if (callStatus === 'Connected' && !communicationOutcome) {
-      setCallError('Please select a Communication Progress Outcome (Step 2).');
-      return;
+    if (callStatus === 'Connected') {
+      if (!communicationOutcome) {
+        setCallError('Please select a Communication Progress Outcome (Step 2).');
+        return;
+      }
+      
+      // 1b. If calling general company line, must provide Person Contacted
+      if (selectedContactId === '') {
+        if (!generalCallSpokeTo.trim()) {
+          setCallError('Please provide the Name of the Person Contacted for the Company Official Number.');
+          return;
+        }
+      }
     }
     // 2. Call Back Later requires date and time
     if (callStatus === 'Connected' && communicationOutcome === 'Call Back Later') {
@@ -340,7 +408,7 @@ const handleAddCustomRecipient = (e) => {
         return;
       }
     }
-        // 3c. Lead Qualified
+    // 3c. Lead Qualified
     if (callStatus === 'Connected' && communicationOutcome === 'Lead Qualified') {
       if (!meetingDate || !meetingTime) {
         setCallError('Meeting Date and Time are required.');
@@ -349,6 +417,19 @@ const handleAddCustomRecipient = (e) => {
       if (!leadQualifiedDescription.trim()) {
         setCallError('Meeting Agenda is required.');
         return;
+      }
+    }
+    // 3d. Requested Email Contact validation
+    if (callStatus === 'Connected' && communicationOutcome === 'Requested Email') {
+      if (!requestedEmailConfirm.trim()) {
+        setCallError('Confirm Email Address is required.');
+        return;
+      }
+      if (!duplicateRequestedEmailContact) {
+        if (!newRequestedContactName.trim() || !newRequestedContactDesignation.trim()) {
+          setCallError('Name and Designation are required to register the new email contact.');
+          return;
+        }
       }
     }
     // 4. Prevent pure duplicate submissions (if user didn't pick the existing contact)
@@ -367,6 +448,12 @@ const handleAddCustomRecipient = (e) => {
     // === BUILD LOG ===
     let detailsParts = [`Call Status: ${callStatus}`];
     if (ivrExtension.trim()) detailsParts.push(`IVR Ext: ${ivrExtension.trim()}`);
+    if (selectedContactId === '' && (generalCallSpokeTo.trim() || generalCallDesignation.trim())) {
+      let spokeStr = [];
+      if (generalCallSpokeTo.trim()) spokeStr.push(generalCallSpokeTo.trim());
+      if (generalCallDesignation.trim()) spokeStr.push(`(${generalCallDesignation.trim()})`);
+      detailsParts.push(`Spoke To: ${spokeStr.join(' ')}`);
+    }
     
     if (callStatus === 'Connected' && communicationOutcome) {
       if (communicationOutcome === 'Requested Email') detailsParts.push(`Outcome: Requested Email (Confirmed: ${requestedEmailConfirm})`);
@@ -387,6 +474,24 @@ const handleAddCustomRecipient = (e) => {
     if (callTranscriptNotes.trim()) detailsParts.push(`Notes: ${callTranscriptNotes.trim()}`);
     
     let callOutcome = communicationOutcome || '';
+    
+    // Check if we need to create a new Requested Email contact
+    if (callStatus === 'Connected' && communicationOutcome === 'Requested Email' && !duplicateRequestedEmailContact) {
+      try {
+        await api.post(`/prospects/${prospect.id}/add-contact/`, {
+          contact_name: newRequestedContactName,
+          designation: newRequestedContactDesignation,
+          phone_number: newRequestedContactMobile,
+          official_email: requestedEmailConfirm,
+          source: 'LQ'
+        });
+        toast.success('New Key Contact registered successfully.');
+      } catch (err) {
+        console.error("Failed to create requested email contact", err);
+        setCallError('Failed to save the new Key Contact. Please try again.');
+        return;
+      }
+    }
     
     try {
       const callPhone = selectedContactId
@@ -420,7 +525,7 @@ const handleAddCustomRecipient = (e) => {
       fetchOutreachLogs();
     } catch (err) {
       console.error("Failed to log call outcome", err);
-      setCallError('Failed to save. Please try again.');
+      setCallError('Failed to save activity. Please try again.');
       return;
     }
     
@@ -469,21 +574,41 @@ const handleAddCustomRecipient = (e) => {
     // Not Interested
     if (callStatus === 'Connected' && communicationOutcome === 'Not Interested') {
       setNotInterestedReason('');
-      onClose(); // close the modal
+      toast.success("Activity saved successfully. Prospect marked as Not Interested.");
       return;
     }
 
     // Prospect Selected → set qualification_status to 'Lead Qualified' + close
     if (callStatus === 'Connected' && communicationOutcome === 'Lead Qualified') {
       try {
-        await api.patch(`/lq-pipeline/${selectedLq.id}/`, { qualification_status: 'Prospect Selected' });
+        await api.patch(`/lq-pipeline/${selectedLq.id}/`, { 
+            qualification_status: 'Lead Qualified',
+            attended_meeting: attendedMeeting 
+        });
+
+        // Save Meeting if date & time exist
+        if (meetingDate && meetingTime) {
+          const scheduled_datetime = new Date(`${meetingDate}T${meetingTime}:00`).toISOString();
+          await api.post(`/meetings/`, {
+            prospect: prospect.id,
+            scheduled_datetime,
+            meeting_link: meetingLink,
+            agenda: leadQualifiedDescription
+          });
+        }
       } catch (err) {
-        console.error('Failed to update qualification status to Prospect Selected', err);
+        console.error('Failed to update qualification status or schedule meeting', err);
       }
       setLeadQualifiedDescription('');
-      onClose(); // close the modal
+      setMeetingDate('');
+      setMeetingTime('');
+      setMeetingLink('');
+      setAttendedMeeting(false);
+      toast.success("Activity saved successfully. Lead Qualified!");
       return;
     }
+    
+    toast.success("Activity saved successfully.");
   };
 
   const getFieldValue = (key) => {
@@ -526,12 +651,6 @@ const handleAddCustomRecipient = (e) => {
           <div className="flex items-center gap-3">
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                  Lead Qualification & Outreach Workspace
-                </span>
-                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-emerald-600 text-white flex items-center gap-1">
-                  <Building2 className="w-3 h-3" /> {prospect.company_structure || 'Company'}
-                </span>
               </div>
               <h3 className="text-xl font-bold text-white mt-1">{prospect.company_name}</h3>
             </div>
@@ -704,13 +823,7 @@ const handleAddCustomRecipient = (e) => {
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
-                            <h4 className="text-sm font-extrabold text-white">Company Introduction Email</h4>
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase border ${
-                              emailProgress === 'Sent' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30' :
-                              emailProgress === 'Waiting for Response' ? 'bg-amber-500/20 text-amber-300 border-amber-400/30' :
-                              emailProgress === 'Received Response' ? 'bg-sky-500/20 text-sky-300 border-sky-400/30' :
-                              'bg-slate-700 text-slate-300 border-slate-600'
-                            }`}>Status: {emailProgress}</span>
+                            <h4 className="text-sm font-extrabold text-white">{prospect.company_name}</h4>
                             {/* Email open tracking indicator */}
                             {isEmailSent && (
                               <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase border ${
@@ -722,7 +835,7 @@ const handleAddCustomRecipient = (e) => {
                               </span>
                             )}
                           </div>
-                          <p className="text-xs text-slate-300 mt-0.5">{isEmailSent ? 'Email dispatched to prospect recipients.' : 'Send introductory email to enable call outcomes.'}</p>
+                          <p className="text-xs text-slate-300 mt-0.5">{isEmailSent ? '' : 'Send introductory email to enable call outcomes.'}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
@@ -731,7 +844,7 @@ const handleAddCustomRecipient = (e) => {
                             <button key={st} disabled={true} className={`px-2.5 py-1 rounded-lg font-bold transition cursor-not-allowed ${emailProgress === st ? 'bg-indigo-600 text-white' : 'text-slate-400 opacity-70'}`}>{st}</button>
                           ))}
                         </div>
-                        {emailProgress === 'Waiting for Response' && (
+                        {(emailProgress === 'Sent' || emailProgress === 'Waiting for Response') && (
                           <button
                             type="button"
                             onClick={async (e) => {
@@ -761,7 +874,7 @@ const handleAddCustomRecipient = (e) => {
                           </button>
                         )}
                         <button onClick={() => setEmailCollapsed(!emailCollapsed)} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white font-extrabold text-xs rounded-xl transition flex items-center gap-1.5 border border-white/10">
-                          {emailCollapsed ? <><span className="hidden sm:inline">Expand Draft</span><ChevronDown className="w-3.5 h-3.5" /></> : <><span className="hidden sm:inline">Collapse</span><ChevronUp className="w-3.5 h-3.5" /></>}
+                          {emailCollapsed ? <><span className="hidden sm:inline">{isEmailSent ? 'View Full Mail' : 'Expand Draft'}</span><ChevronDown className="w-3.5 h-3.5" /></> : <><span className="hidden sm:inline">Collapse</span><ChevronUp className="w-3.5 h-3.5" /></>}
                         </button>
                       </div>
                     </div>
@@ -898,10 +1011,10 @@ const handleAddCustomRecipient = (e) => {
                     ) : (
                       <form onSubmit={handleLogCallOutcome} className="p-5 space-y-5 text-xs">
                         {/* Key People Dropdown + Phone Display */}
-                        <div className="p-3.5 bg-emerald-50/60 border border-emerald-200/80 rounded-xl space-y-3">
+                        <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-4 shadow-sm">
                           <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
                             <div className="flex-1">
-                              <label className="block font-extrabold text-emerald-950 text-[10px] uppercase tracking-wider mb-1.5">Select Key Person to Call</label>
+                              <label className="block font-extrabold text-slate-700 text-[10px] uppercase tracking-wider mb-1.5">Select Key Person to Call</label>
                               <select
                                 value={selectedContactId}
                                 onChange={(e) => {
@@ -922,7 +1035,7 @@ const handleAddCustomRecipient = (e) => {
                                     setCommunicationOutcome(latestCall.outcome || '');
                                   }
                                 }}
-                                className="w-full p-2.5 bg-white border border-emerald-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all cursor-pointer"
                               >
                                 <option value="">
                                   Company Official Number (General) {getGeneralLatestCall() ? ` - ${getGeneralLatestCall()}` : ''}
@@ -940,52 +1053,63 @@ const handleAddCustomRecipient = (e) => {
                             </div>
                             <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
                               <label className="text-xs font-bold text-slate-700 whitespace-nowrap">IVR Ext:</label>
-                              <input type="text" value={ivrExtension} onChange={(e) => setIvrExtension(e.target.value)} placeholder="e.g. Ext. 104" className="p-2 bg-white border border-emerald-300 rounded-xl text-xs font-extrabold text-slate-900 w-28 focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
+                              <input type="text" value={ivrExtension} onChange={(e) => setIvrExtension(e.target.value)} placeholder="e.g. Ext. 104" className="p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-extrabold text-slate-900 w-28 focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all" />
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 pt-1 border-t border-emerald-200/60">
-                            <Phone className="w-4 h-4 text-emerald-700 shrink-0" />
+                          <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
+                            <Phone className="w-4 h-4 text-slate-500 shrink-0" />
                             {selectedContactId && selectedContactData ? (
-                              <div className="flex items-center gap-2">
-                                <span className="font-extrabold text-emerald-950 text-xs">
-                                  {selectedContactData.contact_name}: {selectedContactData.phone_number || 'No phone on record'}
+                              <div className="flex items-center gap-2 w-full">
+                                <span className="font-extrabold text-slate-800 text-xs">
+                                  {selectedContactData.contact_name}: <span className="text-slate-600 font-medium">{selectedContactData.phone_number || 'No phone on record'}</span>
                                 </span>
-                                {selectedContactData.phone_number && !isContactLockedCheck(selectedContactId) && (
-                                  <a href={`tel:${selectedContactData.phone_number}`} className="px-2 py-0.5 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-[10px] rounded-lg transition">
-                                    Call Now
-                                  </a>
-                                )}
                               </div>
                             ) : (
-                              <div className="flex items-center gap-2">
-                                <span className="font-extrabold text-emerald-950 text-xs">
-                                  Official Company Number: {prospect.official_phone_number || 'No phone'}
-                                </span>
-                                {prospect.official_phone_number && !isContactLockedCheck(null) && (
-                                  <a href={`tel:${prospect.official_phone_number}`} className="px-2 py-0.5 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-[10px] rounded-lg transition">
-                                    Call Now
-                                  </a>
-                                )}
+                              <div className="flex flex-col w-full gap-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-extrabold text-slate-800 text-xs">
+                                    Official Company Number: <span className="text-slate-600 font-medium">{prospect.official_phone_number || 'No phone'}</span>
+                                  </span>
+                                </div>
+                                <div className="mt-1 pt-3 border-t border-slate-100">
+                                  <label className="block text-[10px] font-bold text-slate-700 mb-1.5 uppercase tracking-wider">Person Contacted * <span className="font-normal text-slate-500 normal-case tracking-normal">Who did you speak to?</span></label>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <input 
+                                      type="text" 
+                                      value={generalCallSpokeTo} 
+                                      onChange={(e) => setGeneralCallSpokeTo(e.target.value)} 
+                                      placeholder="Name (e.g. John, Unknown)" 
+                                      className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all"
+                                    />
+                                    <input 
+                                      type="text" 
+                                      value={generalCallDesignation} 
+                                      onChange={(e) => setGeneralCallDesignation(e.target.value)} 
+                                      placeholder="Designation (Optional)" 
+                                      className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all"
+                                    />
+                                  </div>
+                                </div>
                               </div>
                             )}
                           </div>
                         </div>
-                        <div>
-                          <label className="block font-extrabold text-slate-800 mb-2 uppercase tracking-wider text-[10px]">1. Record Call Status Outcome</label>
+                        <div className="pt-2">
+                          <label className="block font-extrabold text-slate-700 mb-2.5 uppercase tracking-wider text-[10px]">1. Record Call Status Outcome</label>
                           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                             {[
-                              { label: 'Connected',      active: 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-300', idle: 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100' },
-                              { label: 'No Answer',      active: 'bg-amber-500 text-white border-amber-500 shadow-md ring-2 ring-amber-300',   idle: 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100' },
-                              { label: 'Busy',           active: 'bg-orange-500 text-white border-orange-500 shadow-md ring-2 ring-orange-300', idle: 'bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100' },
-                              { label: 'Switched Off',   active: 'bg-rose-600 text-white border-rose-600 shadow-md ring-2 ring-rose-300',       idle: 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100' },
-                              { label: 'Invalid Number', active: 'bg-slate-700 text-white border-slate-700 shadow-md ring-2 ring-slate-400',    idle: 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200' },
+                              { label: 'Connected',      active: 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-sm ring-1 ring-emerald-500/20', idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
+                              { label: 'No Answer',      active: 'bg-amber-50 border-amber-500 text-amber-900 shadow-sm ring-1 ring-amber-500/20',   idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
+                              { label: 'Busy',           active: 'bg-orange-50 border-orange-500 text-orange-900 shadow-sm ring-1 ring-orange-500/20', idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
+                              { label: 'Switched Off',   active: 'bg-rose-50 border-rose-500 text-rose-900 shadow-sm ring-1 ring-rose-500/20',       idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
+                              { label: 'Invalid Number', active: 'bg-slate-100 border-slate-500 text-slate-900 shadow-sm ring-1 ring-slate-500/20',    idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
                             ].map(({ label, active, idle }) => (
                               <button
                                 key={label}
                                 type="button"
                                 disabled={isContactLockedCheck(selectedContactId)}
                                 onClick={() => setCallStatus(label)}
-                                className={`p-2.5 rounded-xl border text-center font-extrabold text-xs transition-all ${callStatus === label ? active : idle} ${isContactLockedCheck(selectedContactId) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                className={`p-2.5 rounded-lg border text-center font-extrabold text-xs transition-all ${callStatus === label ? active : idle} ${isContactLockedCheck(selectedContactId) ? 'opacity-50 cursor-not-allowed bg-slate-50' : ''}`}
                               >
                                 {label}
                               </button>
@@ -993,19 +1117,22 @@ const handleAddCustomRecipient = (e) => {
                           </div>
                         </div>
                         {callStatus === 'Connected' && (
-                          <div className="space-y-4 pt-2 border-t border-slate-200">
+                          <div className="space-y-4 pt-4 border-t border-slate-100">
                             <div>
-                              <label className="block font-extrabold text-slate-900 mb-1.5 uppercase tracking-wider text-[10px] flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5 text-emerald-600" /><span>2. Record Communication Progress Outcome</span></label>
+                              <label className="block font-extrabold text-slate-700 mb-2.5 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                                <TrendingUp className="w-3.5 h-3.5 text-sky-600" />
+                                <span>2. Record Communication Progress Outcome</span>
+                              </label>
                               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                 {['Requested Email', 'Call Back Later', 'Call Transferred', 'Shared Another Contact', 'Not Interested', 'Lead Qualified'].map(out => (
-                                  <button key={out} type="button" disabled={isContactLockedCheck(selectedContactId)} onClick={() => setCommunicationOutcome(out)} className={`p-2.5 rounded-xl border text-left font-extrabold text-xs transition flex items-center justify-between ${
+                                  <button key={out} type="button" disabled={isContactLockedCheck(selectedContactId)} onClick={() => setCommunicationOutcome(out)} className={`p-2.5 rounded-lg border text-left font-bold text-xs transition flex items-center justify-between ${
                                     communicationOutcome === out ?
-                                      out === 'Not Interested' ? 'bg-rose-50 border-rose-500 text-rose-950 shadow-sm' :
-                                      out === 'Lead Qualified' ? 'bg-emerald-50 border-emerald-500 text-emerald-950 shadow-sm' :
-                                      'bg-emerald-50 border-emerald-500 text-emerald-950 shadow-sm'
-                                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                                  } ${isContactLockedCheck(selectedContactId) ? 'opacity-50 cursor-not-allowed hover:bg-transparent' : ''}`}>
-                                    <span>{out}</span>{communicationOutcome === out && <CheckCircle className="w-4 h-4 text-emerald-600" />}
+                                      out === 'Not Interested' ? 'bg-rose-50 border-rose-500 text-rose-900 shadow-sm ring-1 ring-rose-500/20' :
+                                      out === 'Lead Qualified' ? 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-sm ring-1 ring-emerald-500/20' :
+                                      'bg-sky-50 border-sky-500 text-sky-900 shadow-sm ring-1 ring-sky-500/20'
+                                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+                                  } ${isContactLockedCheck(selectedContactId) ? 'opacity-50 cursor-not-allowed hover:bg-transparent bg-slate-50' : ''}`}>
+                                    <span>{out}</span>{communicationOutcome === out && <CheckCircle className={`w-4 h-4 ${out === 'Not Interested' ? 'text-rose-500' : out === 'Lead Qualified' ? 'text-emerald-500' : 'text-sky-500'}`} />}
                                   </button>
                                 ))}
                               </div>
@@ -1013,10 +1140,48 @@ const handleAddCustomRecipient = (e) => {
                             
                             {/* Dynamic forms */}
                             {communicationOutcome === 'Requested Email' && (
-                              <div className="p-3.5 bg-sky-50 border border-sky-200 rounded-xl space-y-2">
-                                <span className="font-extrabold text-sky-950 block text-xs">✉️ Prospect Requested Info Email</span>
-                                <label className="block text-[11px] font-bold text-slate-700">Confirm Email Address:</label>
-                                <input type="email" value={requestedEmailConfirm} onChange={(e) => setRequestedEmailConfirm(e.target.value)} className="w-full p-2 bg-white border border-sky-300 rounded-xl text-xs font-semibold" />
+                              <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-3 shadow-sm">
+                                <span className="font-extrabold text-slate-800 flex items-center gap-1.5 text-xs">✉️ Prospect Requested Info Email</span>
+                                <div>
+                                  <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Confirm Email Address:</label>
+                                  <input type="email" value={requestedEmailConfirm} onChange={(e) => setRequestedEmailConfirm(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all" placeholder="e.g. contact@company.com" />
+                                </div>
+                                
+                                {requestedEmailConfirm && requestedEmailConfirm.trim() && (
+                                  <>
+                                    {duplicateRequestedEmailContact ? (
+                                      <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                                        <div>
+                                          <p className="text-[11px] font-extrabold text-amber-900">Email Already Exists</p>
+                                          <p className="text-[10px] font-medium text-amber-800 mt-0.5">
+                                            This email belongs to <span className="font-bold">{duplicateRequestedEmailContact.contact_name}</span> ({duplicateRequestedEmailContact.designation}). No new contact will be created.
+                                          </p>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-2 pt-2 border-t border-sky-200/50">
+                                        <p className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
+                                          <Shield className="w-3.5 h-3.5 text-indigo-500" /> New Email Detected: Please register contact
+                                        </p>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                          <div>
+                                            <label className="block text-[10px] font-bold text-slate-700 mb-1">Key Person Name <span className="text-red-500">*</span></label>
+                                            <input type="text" value={newRequestedContactName} onChange={(e) => setNewRequestedContactName(e.target.value)} className="w-full p-2 bg-white border border-sky-300 rounded-xl text-xs font-semibold" placeholder="Name" />
+                                          </div>
+                                          <div>
+                                            <label className="block text-[10px] font-bold text-slate-700 mb-1">Mobile Number</label>
+                                            <input type="text" value={newRequestedContactMobile} onChange={(e) => setNewRequestedContactMobile(e.target.value)} className="w-full p-2 bg-white border border-sky-300 rounded-xl text-xs font-semibold" placeholder="Optional" />
+                                          </div>
+                                          <div className="sm:col-span-2">
+                                            <label className="block text-[10px] font-bold text-slate-700 mb-1">Designation/Role <span className="text-red-500">*</span></label>
+                                            <input type="text" value={newRequestedContactDesignation} onChange={(e) => setNewRequestedContactDesignation(e.target.value)} className="w-full p-2 bg-white border border-sky-300 rounded-xl text-xs font-semibold" placeholder="e.g. IT Director" />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
                               </div>
                             )}
                             {communicationOutcome === 'Call Back Later' && (
@@ -1025,11 +1190,11 @@ const handleAddCustomRecipient = (e) => {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   <div>
                                     <label className="block text-[11px] font-bold text-slate-700 mb-1">Date <span className="text-red-500">*</span></label>
-                                    <input type="date" required value={callbackDate} onChange={(e) => setCallbackDate(e.target.value)} className="w-full p-2 bg-white border border-amber-300 rounded-xl text-xs font-semibold" />
+                                    <input type="date" max="9999-12-31" required value={callbackDate} onChange={(e) => setCallbackDate(e.target.value)} className="w-full p-2 bg-white border border-amber-300 rounded-xl text-xs font-semibold" />
                                   </div>
                                   <div>
                                     <label className="block text-[11px] font-bold text-slate-700 mb-1">Time <span className="text-red-500">*</span></label>
-                                    <input type="time" required value={callbackTime} onChange={(e) => setCallbackTime(e.target.value)} className="w-full p-2 bg-white border border-amber-300 rounded-xl text-xs font-semibold" />
+                                    <TimeSelect value={callbackTime} onChange={setCallbackTime} />
                                   </div>
                                 </div>
                                 <div>
@@ -1048,13 +1213,13 @@ const handleAddCustomRecipient = (e) => {
                               </div>
                             )}
                             {communicationOutcome === 'Shared Another Contact' && (
-                              <div className="p-3.5 bg-purple-50 border border-purple-200 rounded-xl space-y-3">
-                                <span className="font-extrabold text-purple-950 text-xs block">👤 Shared Another Contact Information</span>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                  <div><label className="block text-[10px] font-bold text-slate-700 mb-0.5">Name:</label><input type="text" value={sharedContactName} onChange={(e) => setSharedContactName(e.target.value)} className="w-full p-2 bg-white border border-purple-300 rounded-xl" /></div>
-                                  <div><label className="block text-[10px] font-bold text-slate-700 mb-0.5">Designation:</label><input type="text" value={sharedContactDesignation} onChange={(e) => setSharedContactDesignation(e.target.value)} className="w-full p-2 bg-white border border-purple-300 rounded-xl" /></div>
-                                  <div><label className="block text-[10px] font-bold text-slate-700 mb-0.5">Phone:</label><input type="text" value={sharedContactPhone} onChange={(e) => setSharedContactPhone(e.target.value)} className="w-full p-2 bg-white border border-purple-300 rounded-xl" /></div>
-                                  <div><label className="block text-[10px] font-bold text-slate-700 mb-0.5">Email:</label><input type="email" value={sharedContactEmail} onChange={(e) => setSharedContactEmail(e.target.value)} className="w-full p-2 bg-white border border-purple-300 rounded-xl" /></div>
+                              <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-4 shadow-sm">
+                                <span className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5">👤 Shared Another Contact Information</span>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  <div><label className="block text-[10px] font-bold text-slate-700 mb-1.5">Name:</label><input type="text" value={sharedContactName} onChange={(e) => setSharedContactName(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all" /></div>
+                                  <div><label className="block text-[10px] font-bold text-slate-700 mb-1.5">Designation:</label><input type="text" value={sharedContactDesignation} onChange={(e) => setSharedContactDesignation(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all" /></div>
+                                  <div><label className="block text-[10px] font-bold text-slate-700 mb-1.5">Phone:</label><input type="text" value={sharedContactPhone} onChange={(e) => setSharedContactPhone(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all" /></div>
+                                  <div><label className="block text-[10px] font-bold text-slate-700 mb-1.5">Email:</label><input type="email" value={sharedContactEmail} onChange={(e) => setSharedContactEmail(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all" /></div>
                                 </div>
                                 {duplicateContact && (
                                   <div className="mt-2 p-2 bg-amber-100 border border-amber-300 rounded text-amber-900 text-xs flex flex-col sm:flex-row items-center justify-between gap-2">
@@ -1077,39 +1242,45 @@ const handleAddCustomRecipient = (e) => {
                               </div>
                             )}
                             {communicationOutcome === 'Not Interested' && (
-                              <div className="p-3.5 bg-rose-50 border border-rose-300 rounded-xl space-y-2">
-                                <span className="font-extrabold text-rose-950 text-xs block flex items-center gap-1.5">🚫 Company Not Interested — <span className="text-rose-600">Outreach will be closed after saving</span></span>
-                                <label className="block text-[11px] font-bold text-slate-700">Reason for Disinterest <span className="text-red-500">*</span></label>
-                                <input
-                                  type="text"
-                                  value={notInterestedReason}
-                                  onChange={(e) => setNotInterestedReason(e.target.value)}
-                                  placeholder="e.g. Budget frozen, not the right time..."
-                                  className={`w-full p-2 bg-white border rounded-xl text-xs font-semibold ${notInterestedReason.trim() ? 'border-rose-300' : 'border-red-400 ring-1 ring-red-300'}`}
-                                />
-                                <p className="text-[10px] text-rose-700 font-semibold">⚠️ Prospect Status will be set to <strong>Budget Frozen</strong>. The Outreach button will be disabled.</p>
+                              <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-4 shadow-sm">
+                                <span className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5">🚫 Company Not Interested — <span className="text-rose-600 font-semibold">Outreach will be closed after saving</span></span>
+                                <div>
+                                  <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Reason for Disinterest <span className="text-rose-500">*</span></label>
+                                  <input
+                                    type="text"
+                                    value={notInterestedReason}
+                                    onChange={(e) => setNotInterestedReason(e.target.value)}
+                                    placeholder="e.g. Budget frozen, not the right time..."
+                                    className={`w-full p-2.5 bg-slate-50 border rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all ${notInterestedReason.trim() ? 'border-slate-300' : 'border-rose-300 ring-1 ring-rose-200'}`}
+                                  />
+                                </div>
+                                <p className="text-[10px] text-slate-500 font-semibold flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5 text-rose-500" /> Prospect Status will be set to <strong className="text-slate-700">Lead Freeze</strong>. The Outreach button will be disabled.</p>
                               </div>
                             )}
                             {communicationOutcome === 'Lead Qualified' && (
-                              <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-xl space-y-3">
-                                <span className="font-extrabold text-emerald-950 block text-xs">✅ Lead Qualified & Schedule Meeting</span>
+                              <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-4 shadow-sm">
+                                <span className="font-extrabold text-slate-800 flex items-center gap-1.5 text-xs">✅ Lead Qualified & Schedule Meeting</span>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   <div>
-                                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Meeting Date *</label>
-                                    <input type="date" required value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)} className="w-full p-2 bg-white border border-emerald-300 rounded-xl text-xs" />
+                                    <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Meeting Date *</label>
+                                    <input type="date" max="9999-12-31" required value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all" />
                                   </div>
                                   <div>
-                                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Meeting Time *</label>
-                                    <input type="time" required value={meetingTime} onChange={(e) => setMeetingTime(e.target.value)} className="w-full p-2 bg-white border border-emerald-300 rounded-xl text-xs" />
+                                    <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Meeting Time *</label>
+                                    <TimeSelect value={meetingTime} onChange={setMeetingTime} />
                                   </div>
                                 </div>
                                 <div>
-                                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Meeting Link</label>
-                                  <input type="text" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} className="w-full p-2 bg-white border border-emerald-300 rounded-xl text-xs" />
+                                  <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Meeting Link</label>
+                                  <input type="text" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all" />
                                 </div>
                                 <div>
-                                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Agenda *</label>
-                                  <textarea rows={2} value={leadQualifiedDescription} onChange={(e) => setLeadQualifiedDescription(e.target.value)} className={`w-full p-2 bg-white border rounded-xl text-xs resize-none ${leadQualifiedDescription.trim() ? 'border-emerald-300' : 'border-red-400'}`} />
+                                  <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Agenda *</label>
+                                  <textarea rows={2} value={leadQualifiedDescription} onChange={(e) => setLeadQualifiedDescription(e.target.value)} className={`w-full p-2.5 bg-slate-50 border rounded-lg text-xs font-semibold resize-none focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all ${leadQualifiedDescription.trim() ? 'border-slate-300' : 'border-rose-300 ring-1 ring-rose-200'}`} />
+                                </div>
+                                <div className="flex items-center gap-2 mt-2">
+                                  <input type="checkbox" id="attendedMeeting" checked={attendedMeeting} onChange={(e) => setAttendedMeeting(e.target.checked)} className="w-4 h-4 text-sky-600 rounded border-slate-300 focus:ring-sky-500" />
+                                  <label htmlFor="attendedMeeting" className="text-[11px] font-bold text-slate-700 cursor-pointer">Prospect Attended Meeting</label>
                                 </div>
                               </div>
                             )}
@@ -1117,9 +1288,9 @@ const handleAddCustomRecipient = (e) => {
                         )}
                         {/* Hide transcript when a structured outcome form is already capturing detail */}
                         {!['Requested Email', 'Call Back Later', 'Call Transferred', 'Shared Another Contact', 'Not Interested', 'Lead Qualified'].includes(communicationOutcome) && (
-                          <div>
-                            <label className="block font-bold text-slate-800 mb-1">Call Transcript &amp; Discussion Summary</label>
-                            <textarea rows={3} value={callTranscriptNotes} onChange={(e) => setCallTranscriptNotes(e.target.value)} placeholder="Enter notes from call conversation..." className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20 font-medium" />
+                          <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-2 shadow-sm mt-4">
+                            <label className="block font-extrabold text-slate-700 mb-1.5 text-[10px] uppercase tracking-wider">Call Transcript &amp; Discussion Summary</label>
+                            <textarea rows={3} value={callTranscriptNotes} onChange={(e) => setCallTranscriptNotes(e.target.value)} placeholder="Enter notes from call conversation..." className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all resize-none" />
                           </div>
                         )}
                         <div className="flex flex-col gap-2 pt-1">
@@ -1158,8 +1329,7 @@ const handleAddCustomRecipient = (e) => {
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${log.activity_type === 'CALL_MADE' ? 'bg-emerald-100 text-emerald-900' : 'bg-indigo-100 text-indigo-900'}`}>{log.activity_type}</span>
                                 {log.status && <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${log.activity_type === 'CALL_MADE' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-indigo-50 text-indigo-800 border-indigo-200'}`}>{log.activity_type}: {log.status}</span>}
-                                {log.outcome && <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold">Outcome: {log.outcome}</span>}
-                                {log.contact_name && <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 text-[10px] font-bold">Contact: {log.contact_name}</span>}
+                                <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 text-[10px] font-bold">Contact: {log.contact_name || prospect?.company_name}</span>
                               </div>
                               <span className="text-[10px] text-slate-400 font-semibold flex items-center gap-1">
                                 {new Date(log.created_at).toLocaleString()} 

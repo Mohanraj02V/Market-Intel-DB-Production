@@ -3,9 +3,10 @@ import { useParams, Link } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchLqPipelineItem, clearSelectedItem, reportIssueToPre, updateVerification } from '../features/lqPipeline/lqPipelineSlice';
 import { 
-  ArrowLeft, Building2, Globe, MapPin, Briefcase, Tag, Target, CheckCircle, XCircle, Phone, Mail, FileEdit, Clock
+  ArrowLeft, Building2, Globe, MapPin, Briefcase, Tag, Target, CheckCircle, XCircle, Phone, Mail, FileEdit, Clock, Network
 } from 'lucide-react';
 import LqWorkspaceModal from '../components/lq/LqWorkspaceModal';
+import CorporateStructureTree from '../components/prospects/CorporateStructureTree';
 
 const LqPipelineDetailPage = () => {
   const { id } = useParams();
@@ -114,7 +115,7 @@ const LqPipelineDetailPage = () => {
   }
 
   const p = lq.prospect;
-  const isBudgetFrozen = lq.qualification_status === 'Budget Frozen';
+  const isLeadFreeze = lq.qualification_status === 'Lead Freeze';
   const isLeadQualified = lq.qualification_status === 'Lead Qualified';
   const isVerified = lq.verification_status === 'Verified';
   const hasIssue = lq.pre_task_status === 'ISSUE_SENT_TO_PRE';
@@ -131,15 +132,15 @@ const LqPipelineDetailPage = () => {
         </Link>
         <button
           onClick={() => openWorkspace(lq)}
-          disabled={isBudgetFrozen}
+          disabled={isLeadFreeze}
           className={`px-4 py-2 rounded-lg font-bold text-sm shadow-sm transition flex items-center gap-2 ${
-            isBudgetFrozen 
+            isLeadFreeze 
               ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
               : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200'
           }`}
         >
-          {isBudgetFrozen ? (
-            <><XCircle className="w-4 h-4" /> Budget Frozen (Outreach Disabled)</>
+          {isLeadFreeze ? (
+            <><XCircle className="w-4 h-4" /> Lead Freeze (Outreach Disabled)</>
           ) : (
             <><Target className="w-4 h-4" /> Open Outreach Workspace</>
           )}
@@ -304,6 +305,15 @@ const LqPipelineDetailPage = () => {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Branch Visualization Structure */}
+      <div className="mt-8 mb-8">
+        <h2 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+          <Network className="h-6 w-6 text-indigo-600" />
+          Branch Visualization Structure
+        </h2>
+        <CorporateStructureTree prospect={p} />
       </div>
 
       {/* Workspace Modal */}

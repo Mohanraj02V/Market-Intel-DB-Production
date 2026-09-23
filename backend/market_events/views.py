@@ -1,13 +1,13 @@
 from rest_framework import viewsets, filters
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework.permissions import IsAuthenticated
 from django.db.models import Count, Prefetch
 from .models import MarketEvent, MarketEventParticipation
 from .serializers import MarketEventSerializer
+from .permissions import MarketEventPermission
 
 class MarketEventViewSet(viewsets.ModelViewSet):
     serializer_class = MarketEventSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [MarketEventPermission]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['host_country']
     search_fields = ['event_title', 'host_country']

@@ -4,6 +4,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { loginSuccess, logout } from '../features/auth/authSlice';
 import api from '../services/api';
 import LoginPage from '../pages/LoginPage';
+import PreDashboardPage from '../pages/PreDashboardPage';
 import ProspectsPage from '../pages/ProspectsPage';
 import MarketEventsPage from '../pages/MarketEventsPage';
 import MarketEventDetailPage from '../pages/MarketEventDetailPage';
@@ -15,6 +16,8 @@ import KeyPeoplePage from '../pages/KeyPeoplePage';
 import KeyPersonDetailPage from '../pages/KeyPersonDetailPage';
 import UserManagementPage from '../pages/UserManagementPage';
 import PreTasksPage from '../pages/PreTasksPage';
+import OutreachActivityDetailPage from '../pages/OutreachActivityDetailPage';
+import LqCalendarPage from '../pages/LqCalendarPage';
 
 import Layout from '../components/layout/Layout';
 
@@ -67,22 +70,29 @@ const AppRouter = () => {
         <Route path="/" element={
           <RoleRoute allowedRoles={['PRE', 'LQ']}><Layout /></RoleRoute>
         }>
-          {/* Default Route redirects to prospects for PRE, lq-pipeline for LQ */}
+          {/* Default Route redirects to dashboard for PRE, lq-pipeline for LQ */}
           <Route index element={
-            user?.role === 'LQ' ? <Navigate to="/lq-pipeline" replace /> : <Navigate to="/prospects" replace />
+            user?.role === 'LQ' ? <Navigate to="/lq-pipeline" replace /> : <Navigate to="/dashboard" replace />
           } />
+          
+          <Route path="dashboard" element={<RoleRoute allowedRoles={['PRE']}><PreDashboardPage /></RoleRoute>} />
           
           <Route path="prospects" element={<RoleRoute allowedRoles={['PRE']}><ProspectsPage /></RoleRoute>} />
           <Route path="prospects/:id" element={<RoleRoute allowedRoles={['PRE']}><ProspectDetailPage /></RoleRoute>} />
-          <Route path="market-events" element={<RoleRoute allowedRoles={['PRE']}><MarketEventsPage /></RoleRoute>} />
-          <Route path="market-events/:id" element={<RoleRoute allowedRoles={['PRE']}><MarketEventDetailPage /></RoleRoute>} />
+          <Route path="market-events" element={<RoleRoute allowedRoles={['PRE', 'LQ']}><MarketEventsPage /></RoleRoute>} />
+          <Route path="market-events/:id" element={<RoleRoute allowedRoles={['PRE', 'LQ']}><MarketEventDetailPage /></RoleRoute>} />
           <Route path="pre-tasks" element={<RoleRoute allowedRoles={['PRE']}><PreTasksPage /></RoleRoute>} />
           <Route path="key-people" element={<RoleRoute allowedRoles={['PRE', 'LQ']}><KeyPeoplePage /></RoleRoute>} />
           <Route path="key-people/:id" element={<RoleRoute allowedRoles={['PRE', 'LQ']}><KeyPersonDetailPage /></RoleRoute>} />
           <Route path="users" element={<RoleRoute requireAdmin={true}><UserManagementPage /></RoleRoute>} />
-          <Route path="lq-pipeline" element={<RoleRoute allowedRoles={['LQ']}><LqPipelinePage /></RoleRoute>} />
+          <Route path="lq-pipeline" element={<RoleRoute allowedRoles={['LQ']}><LqPipelinePage filter="all" /></RoleRoute>} />
+          <Route path="lq-pipeline/pending" element={<RoleRoute allowedRoles={['LQ']}><LqPipelinePage filter="pending" /></RoleRoute>} />
+          <Route path="lq-pipeline/verified" element={<RoleRoute allowedRoles={['LQ']}><LqPipelinePage filter="verified" /></RoleRoute>} />
+          <Route path="lq-pipeline/issued" element={<RoleRoute allowedRoles={['LQ']}><LqPipelinePage filter="issued" /></RoleRoute>} />
           <Route path="lq-pipeline/:id" element={<RoleRoute allowedRoles={['LQ']}><LqPipelineDetailPage /></RoleRoute>} />
+          <Route path="outreach-activity/:prospectId" element={<RoleRoute allowedRoles={['LQ']}><OutreachActivityDetailPage /></RoleRoute>} />
           <Route path="inbox" element={<RoleRoute allowedRoles={['LQ']}><InboxPage /></RoleRoute>} />
+          <Route path="calendar" element={<RoleRoute allowedRoles={['LQ']}><LqCalendarPage /></RoleRoute>} />
 
         </Route>
       </Routes>

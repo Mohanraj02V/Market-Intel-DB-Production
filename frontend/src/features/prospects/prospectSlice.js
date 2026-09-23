@@ -1,38 +1,144 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '../../services/api';
+import {
+  getCachedData,
+  getCachedRecord,
+  setCachedData,
+  removeCachedData,
+  invalidateCache,
+} from '../../services/cache/cacheService';
+import {
+  listCacheKey,
+  detailCacheKey,
+  listCachePrefix,
+} from '../../services/cache/cacheKeys';
 
-export const fetchProspects = createAsyncThunk('prospects/fetchAll', async (params) => {
-  const response = await api.get('/prospects/', { params });
-  return response.data;
-});
+const RESOURCE = 'prospects';
+const STALE_TIME_MS = 15000; // 15 seconds
 
-export const fetchProspectById = createAsyncThunk('prospects/fetchById', async (id) => {
-  const response = await api.get(`/prospects/${id}/`);
-  return response.data;
-});
+function getUserId(thunkAPI) {
+  return thunkAPI.getState().auth?.user?.id;
+}
 
-export const createProspect = createAsyncThunk('prospects/create', async (data, { rejectWithValue }) => {
-  try {
-    const response = await api.post('/prospects/', data);
-    return response.data;
-  } catch (err) {
-    return rejectWithValue(err.response?.data || err.message);
+// ─── Thunks ───────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch prospects list with optional filters/pagination.
+ * Cache-first: returns cached data if available; otherwise calls backend.
+ */
+export const fetchProspects = createAsyncThunk(
+  'prospects/fetchAll',
+  async (params, thunkAPI) => {
+    const userId = getUserId(thunkAPI);
+    const normalizedParams = params || {};
+    const cacheKey = listCacheKey(userId, RESOURCE, normalizedParams);
+
+    if (userId) {
+      const record = await getCachedRecord(cacheKey);
+      if (record) {
+        thunkAPI.dispatch({ type: 'prospects/setCachedList', payload: record.data });
+        if (Date.now() - record.cachedAt < STALE_TIME_MS) {
+          return record.data; // Cache is fresh, skip background fetch
+        }
+      }
+    }
+
+    try {
+      const response = await api.get('/prospects/', { params: normalizedParams });
+      if (userId) {
+        await setCachedData(cacheKey, response.data);
+      }
+      return response.data;
+    } catch (err) {
+      return thunkAPI.rejectWithValue(err.response?.data || err.message);
+    }
   }
-});
+);
 
-export const updateProspect = createAsyncThunk('prospects/update', async ({ id, data }, { rejectWithValue }) => {
-  try {
-    const response = await api.put(`/prospects/${id}/`, data);
-    return response.data;
-  } catch (err) {
-    return rejectWithValue(err.response?.data || err.message);
+/**
+ * Fetch a single prospect by ID.
+ * Cache-first: returns cached entry if available.
+ */
+export const fetchProspectById = createAsyncThunk(
+  'prospects/fetchById',
+  async (id, thunkAPI) => {
+    const userId = getUserId(thunkAPI);
+    const cacheKey = detailCacheKey(userId, RESOURCE, id);
+
+    if (userId) {
+      const record = await getCachedRecord(cacheKey);
+      if (record) {
+        thunkAPI.dispatch({ type: 'prospects/setCachedDetail', payload: record.data });
+        if (Date.now() - record.cachedAt < STALE_TIME_MS) {
+          return record.data; // Cache is fresh, skip background fetch
+        }
+      }
+    }
+
+    try {
+      const response = await api.get(`/prospects/${id}/`);
+      if (userId) {
+        await setCachedData(cacheKey, response.data);
+      }
+      return response.data;
+    } catch (err) {
+      return thunkAPI.rejectWithValue(err.response?.data || err.message);
+    }
   }
-});
+);
 
-export const deleteProspect = createAsyncThunk('prospects/delete', async (id) => {
-  await api.delete(`/prospects/${id}/`);
-  return id;
-});
+export const createProspect = createAsyncThunk(
+  'prospects/create',
+  async (data, thunkAPI) => {
+    try {
+      const response = await api.post('/prospects/', data);
+      const userId = getUserId(thunkAPI);
+      if (userId) {
+        await setCachedData(detailCacheKey(userId, RESOURCE, response.data.id), response.data);
+        await invalidateCache(listCachePrefix(userId, RESOURCE));
+      }
+      return response.data;
+    } catch (err) {
+      return thunkAPI.rejectWithValue(err.response?.data || err.message);
+    }
+  }
+);
+
+export const updateProspect = createAsyncThunk(
+  'prospects/update',
+  async ({ id, data }, thunkAPI) => {
+    try {
+      const response = await api.put(`/prospects/${id}/`, data);
+      const userId = getUserId(thunkAPI);
+      if (userId) {
+        await setCachedData(detailCacheKey(userId, RESOURCE, id), response.data);
+        await invalidateCache(listCachePrefix(userId, RESOURCE));
+      }
+      return response.data;
+    } catch (err) {
+      return thunkAPI.rejectWithValue(err.response?.data || err.message);
+    }
+  }
+);
+
+export const deleteProspect = createAsyncThunk(
+  'prospects/delete',
+  async (id, thunkAPI) => {
+    try {
+      await api.delete(`/prospects/${id}/`);
+      const userId = getUserId(thunkAPI);
+      if (userId) {
+        await removeCachedData(detailCacheKey(userId, RESOURCE, id));
+        await invalidateCache(listCachePrefix(userId, RESOURCE));
+      }
+      return id;
+    } catch (err) {
+      return thunkAPI.rejectWithValue(err.response?.data || err.message);
+    }
+  }
+);
+
+// ─── Slice ────────────────────────────────────────────────────────────────────
 
 const initialState = {
   items: [],
@@ -64,7 +170,16 @@ const prospectSlice = createSlice({
     },
     clearSelectedProspect: (state) => {
       state.selectedProspect = null;
-    }
+    },
+    setCachedList: (state, action) => {
+      state.items = action.payload.results || action.payload;
+      state.count = action.payload.count || action.payload.length;
+      state.next = action.payload.next;
+      state.previous = action.payload.previous;
+    },
+    setCachedDetail: (state, action) => {
+      state.selectedProspect = action.payload;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -93,7 +208,7 @@ const prospectSlice = createSlice({
       })
       .addCase(fetchProspectById.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.error.message || "Failed to fetch prospect details";
+        state.error = action.error.message || 'Failed to fetch prospect details';
       })
       .addCase(createProspect.fulfilled, (state, action) => {
         state.items.unshift(action.payload);
