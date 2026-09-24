@@ -159,20 +159,47 @@ const LqPipelinePage = ({ filter = 'all' }) => {
     const savedChecklist = lq.verification_checklist || {};
     const isConfirming = lq.pre_task_status === 'PRE_UPDATED';
     
-    // Find previously incorrect fields to highlight them
-    const previouslyIncorrect = Object.keys(savedChecklist).filter(k => savedChecklist[k] === 'Incorrect');
-    setCorrectedFields(isConfirming ? previouslyIncorrect : []);
-    
     const allFieldNames = [
       'companyName', 'country', 'address', 'website', 'linkedIn', 'email', 'contactNo', 
       'productService', 'primaryIndustries', 'companyStructure', 'operationalStatus', 
       'marketEvents', 'keyContacts', 'products', 'services', 'solutions'
     ];
+
+    const mapToFormKeys = {
+      companyName: 'company_name',
+      country: 'country_head_office',
+      address: 'complete_address',
+      website: 'official_website_url',
+      linkedIn: 'linkedin_company_page',
+      email: 'official_email_address',
+      contactNo: 'official_phone_number',
+      productService: 'primary_offering_type',
+      primaryIndustries: 'primary_industries',
+      companyStructure: 'company_structure',
+      operationalStatus: 'operational_status',
+      marketEvents: 'market_event_ids',
+      keyContacts: 'key_contacts',
+      products: 'products',
+      services: 'services',
+      solutions: 'solutions'
+    };
+    
+    // Find previously incorrect fields to highlight them
+    const previouslyIncorrect = allFieldNames.filter(k => 
+      savedChecklist[k] === 'Incorrect' || savedChecklist[mapToFormKeys[k]] === 'Incorrect'
+    );
+    setCorrectedFields(isConfirming ? previouslyIncorrect : []);
     
     const newFields = {};
     allFieldNames.forEach(key => {
       // Initialize with saved state. Previously incorrect fields will remain incorrect until manually verified by LQ
-      newFields[key] = savedChecklist[key] || 'Correct';
+      if (savedChecklist[key] === 'Incorrect' || savedChecklist[mapToFormKeys[key]] === 'Incorrect') {
+        newFields[key] = 'Incorrect';
+      } else if (savedChecklist[key] === 'Correct' || savedChecklist[mapToFormKeys[key]] === 'Correct') {
+        newFields[key] = 'Correct';
+      } else {
+        newFields[key] = 'Correct';
+      }
     });
     
     setVerificationFields(newFields);
@@ -261,11 +288,11 @@ const LqPipelinePage = ({ filter = 'all' }) => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-slate-900 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden shadow-sm">
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden shadow-sm">
         <div className="relative z-10">
 
           <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight mb-2">Lead Verification & Outreach Workspace</h1>
-          <p className="text-slate-400 text-sm max-w-2xl">Review and verify prospect master data, qualify opportunities, and continue the lead qualification workflow.</p>
+          <p className="text-blue-100 text-sm max-w-2xl">Review and verify prospect master data, qualify opportunities, and continue the lead qualification workflow.</p>
         </div>
       </div>
 
@@ -321,7 +348,7 @@ const LqPipelinePage = ({ filter = 'all' }) => {
               <h2 className="text-lg font-black text-slate-800">Global Activity Dashboard</h2>
               <p className="text-xs font-semibold text-slate-500">Track outreach history across all prospects by date range.</p>
             </div>
-            <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg shadow-sm px-1.5 py-1">
+            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl shadow-sm px-1.5 py-1">
               <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider pl-1.5 pr-1">Date Range:</label>
               <input 
                 type="date" 
@@ -353,7 +380,7 @@ const LqPipelinePage = ({ filter = 'all' }) => {
                   return (
                     <div 
                       key={group.prospectId} 
-                      className="bg-slate-50 border border-slate-200 rounded-lg overflow-hidden transition-all duration-200 shadow-sm px-4 py-2.5 flex items-center justify-between cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-100 group"
+                      className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden transition-all duration-200 shadow-sm px-4 py-2.5 flex items-center justify-between cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-100 group"
                       onClick={() => navigate(`/outreach-activity/${group.prospectId}`)}
                     >
                       <div className="flex items-center gap-3">
@@ -397,7 +424,7 @@ const LqPipelinePage = ({ filter = 'all' }) => {
                 <input 
                   type="text" 
                   placeholder="Filter by master prospect name, country, industry..." 
-                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm"
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -409,7 +436,7 @@ const LqPipelinePage = ({ filter = 'all' }) => {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
-              <tr className="bg-slate-900 text-slate-300 font-bold uppercase tracking-wider text-[10px]">
+              <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
                 <th className="p-3.5">Master Prospect & PRE Data</th>
                 <th className="p-3.5">PRE Task Status</th>
                 <th className="p-3.5">Verification Status</th>
@@ -417,8 +444,21 @@ const LqPipelinePage = ({ filter = 'all' }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredItems.map(item => {
-                const p = item.prospect;
+              {filteredItems.length === 0 ? (
+                <tr>
+                  <td colSpan={isManager ? 3 : 4} className="p-12 text-center text-slate-500 bg-slate-50">
+                    <div className="flex flex-col items-center justify-center">
+                      <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-sm border border-slate-100 mb-3">
+                        <Activity className="w-6 h-6 text-slate-400" />
+                      </div>
+                      <span className="text-base font-bold text-slate-700">No records found</span>
+                      <p className="text-sm text-slate-500 mt-1">There are currently no prospects matching your criteria.</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filteredItems.map(item => {
+                  const p = item.prospect;
                 const isIssue = item.pre_task_status === 'ISSUE_SENT_TO_PRE';
                 const isUpdated = item.pre_task_status === 'PRE_UPDATED';
                 const isLeadFreeze = item.qualification_status === 'Lead Freeze';
@@ -439,10 +479,10 @@ const LqPipelinePage = ({ filter = 'all' }) => {
                             {p.country_head_office} &bull; {p.primary_industries}
                           </p>
                           <div className="flex items-center gap-3 mt-1.5">
-                            <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                            <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-xl border border-slate-200">
                               Calls Logged: {item.calls_logged_count || 0}
                             </span>
-                            <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                            <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-xl border border-slate-200">
                               Emails Sent: {item.emails_sent_count || 0}
                             </span>
                           </div>
@@ -451,12 +491,12 @@ const LqPipelinePage = ({ filter = 'all' }) => {
                     </td>
                     <td className="p-3.5">
                       {isIssue && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 text-amber-700 border border-amber-200 font-semibold text-[10px]">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 text-amber-700 border border-amber-200 font-semibold text-[10px]">
                           <AlertTriangle className="w-3 h-3" /> Issue Sent to PRE
                         </span>
                       )}
                       {isUpdated && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 border border-slate-300 font-semibold text-[10px]">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 text-slate-700 border border-slate-200 font-semibold text-[10px]">
                           <RefreshCw className="w-3 h-3 text-emerald-500" /> PRE Updated Data
                         </span>
                       )}
@@ -484,17 +524,18 @@ const LqPipelinePage = ({ filter = 'all' }) => {
                             onClick={() => openWorkspace(item)}
                             disabled={isLeadFreeze}
                             title={isLeadFreeze ? 'Outreach disabled — Prospect is Lead Freeze' : ''}
-                            className={`px-3 py-1.5 rounded text-[11px] font-bold transition flex items-center gap-1 ml-auto ${
+                            className={`w-32 justify-center px-3 py-1.5 rounded text-[11px] font-bold transition flex items-center gap-1 ml-auto ${
                               isLeadFreeze ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 
+                              isLeadQualified ? 'bg-emerald-600 hover:bg-emerald-700 text-white' :
                               isIssue ? 'bg-amber-600 hover:bg-amber-700 text-white' :
                               item.verification_status === 'Verified' ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 
                               'bg-slate-800 hover:bg-slate-900 text-white'
                             }`}
                           >
                             {isLeadFreeze ? (
-                              <><XCircle className="w-3 h-3 text-red-500" /><span className="text-red-500">Lead Freeze</span></>
+                              <><XCircle className="w-3 h-3 text-white" /><span>Lead Freeze</span></>
                             ) : isLeadQualified ? (
-                              <><CheckCircle className="w-4 h-4 text-emerald-500" /> <span className="text-emerald-500">Lead Qualified</span></>
+                              <><CheckCircle className="w-4 h-4 text-white" /> <span>Lead Qualified</span></>
                             ) : item.verification_status === 'Verified' ? (
                               <><Phone className="w-3 h-3" /> Outreach</>
                             ) : (
@@ -506,7 +547,7 @@ const LqPipelinePage = ({ filter = 'all' }) => {
                     )}
                   </tr>
                 );
-              })}
+              }))}
             </tbody>
           </table>
         </div>

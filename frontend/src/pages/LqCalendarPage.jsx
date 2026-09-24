@@ -1,23 +1,33 @@
 import React, { useState, useEffect, useRef } from "react";
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, ExternalLink } from "lucide-react";
+import { useSelector } from "react-redux";
 import api from "../services/api";
+import { getZonedDate, formatTimeForUser } from "../utils/timezone";
 
 const HOUR_HEIGHT = 80;
 const START_HOUR = 7;
 const END_HOUR = 23;
 
 export default function LqCalendarPage() {
-  const [events, setEvents] = useState([]);
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const { user } = useSelector(state => state.auth);
+  const getZonedNow = () => getZonedDate(null, user?.timezone);
+  const [currentDate, setCurrentDate] = useState(() => getZonedDate(null, null)); // initialized before user is known, will sync
   const [loading, setLoading] = useState(true);
+  const [events, setEvents] = useState([]);
   const [nowMinute, setNowMinute] = useState(0);
   const scrollRef = useRef(null);
+
+  useEffect(() => {
+    if (user?.timezone) {
+      setCurrentDate(getZonedNow());
+    }
+  }, [user?.timezone]);
 
   useEffect(() => { fetchEvents(); }, [currentDate]);
 
   useEffect(() => {
     const update = () => {
-      const now = new Date();
+      const now = getZonedNow();
       const mins = (now.getHours() - START_HOUR) * 60 + now.getMinutes();
       setNowMinute(mins);
     };
@@ -28,7 +38,7 @@ export default function LqCalendarPage() {
 
   useEffect(() => {
     if (!loading && scrollRef.current) {
-      const now = new Date();
+      const now = getZonedNow();
       const scrollTo = Math.max(0, (now.getHours() - START_HOUR - 1)) * HOUR_HEIGHT;
       scrollRef.current.scrollTop = scrollTo;
     }
@@ -72,10 +82,10 @@ export default function LqCalendarPage() {
   const nextWeek = () => { const d = new Date(currentDate); d.setDate(d.getDate() + 7); setCurrentDate(d); };
 
   const goToday = () => {
-    setCurrentDate(new Date());
+    setCurrentDate(getZonedNow());
     setTimeout(() => {
       if (scrollRef.current) {
-        const now = new Date();
+        const now = getZonedNow();
         const scrollTo = Math.max(0, (now.getHours() - START_HOUR - 1)) * HOUR_HEIGHT;
         scrollRef.current.scrollTop = scrollTo;
       }
@@ -87,11 +97,11 @@ export default function LqCalendarPage() {
     d1.getMonth() === d2.getMonth() &&
     d1.getDate() === d2.getDate();
 
-  const isToday = (d) => isSameDay(d, new Date());
+  const isToday = (d) => isSameDay(d, getZonedNow());
 
   const getEventsForSlot = (day, hour) =>
     events.filter(e => {
-      const eDate = new Date(e.scheduled_datetime);
+      const eDate = getZonedDate(e.scheduled_datetime, user?.timezone);
       return isSameDay(eDate, day) && eDate.getHours() === hour;
     });
 
@@ -202,7 +212,7 @@ export default function LqCalendarPage() {
                           <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4 }}>
                             <Clock size={10} color={subTextColor} />
                             <span style={{ fontSize: 10, fontWeight: 600, color: subTextColor }}>
-                              {new Date(e.scheduled_datetime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              {formatTimeForUser(e.scheduled_datetime, user?.timezone)}
                             </span>
                           </div>
                           {!isMeeting && e.description && (

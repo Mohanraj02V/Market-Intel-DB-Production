@@ -282,7 +282,7 @@ const LqPipelineDetailPage = () => {
                   </div>
 
                   <div className="flex flex-col items-start md:items-end gap-2 min-w-[200px]">
-                    <div className="w-full bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <div className="w-full bg-slate-50 p-3 rounded-xl border border-slate-100">
                       <span className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Latest Outcome</span>
                       {contact.latest_communication_outcome ? (
                         <div className="flex items-center gap-1.5">

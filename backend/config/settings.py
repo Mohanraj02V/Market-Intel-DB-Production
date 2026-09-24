@@ -16,7 +16,7 @@ ALLOWED_HOSTS = [
     h.strip()
     for h in os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost').split(',')
     if h.strip()
-]
+] + ['.trycloudflare.com']
 
 # Trust the proxy (Nginx) HTTPS header so request.is_secure() works correctly.
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchLqPipeline, completePreTask } from '../features/lqPipeline/lqPipelineSlice';
 import ProspectForm from '../components/prospects/ProspectForm';
+import SearchableSelect from '../components/common/SearchableSelect';
 import { AlertTriangle, CheckCircle, FileEdit, Building2 } from 'lucide-react';
 
 const PreTasksPage = () => {
@@ -129,7 +130,7 @@ const PreTasksPage = () => {
               <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">From:</label>
               <input
                 type="date"
-                className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-2 font-medium"
+                className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 p-2 font-medium"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 max={new Date().toISOString().split('T')[0]}
@@ -139,7 +140,7 @@ const PreTasksPage = () => {
               <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">To:</label>
               <input
                 type="date"
-                className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-2 font-medium"
+                className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 p-2 font-medium"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
                 max={new Date().toISOString().split('T')[0]}
@@ -151,16 +152,11 @@ const PreTasksPage = () => {
         {isManager && availableUsers.length > 0 && (
           <div className="flex items-center gap-2 ml-auto">
             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Assigned PRE:</label>
-            <select
-              className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-2 font-medium"
+            <div className="w-48"><SearchableSelect
               value={managerUserFilter}
-              onChange={(e) => setManagerUserFilter(e.target.value)}
-            >
-              <option value="ALL">All Users</option>
-              {availableUsers.map(u => (
-                <option key={u} value={u}>{u}</option>
-              ))}
-            </select>
+              onChange={(val) => setManagerUserFilter(val)}
+              options={[{value: 'ALL', label: 'All Users'}, ...availableUsers.map(u => ({value: u, label: u}))]}
+            /></div>
           </div>
         )}
       </div>
@@ -242,7 +238,7 @@ const PreTasksPage = () => {
                         </button>
                       )}
                       {!isManager && activeTab === 'COMPLETED' && (
-                        <div className="px-4 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold border border-emerald-200 flex items-center gap-1.5 w-max justify-center shadow-sm">
+                        <div className="px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl text-xs font-bold border border-emerald-200 flex items-center gap-1.5 w-max justify-center shadow-sm">
                           <CheckCircle className="w-3.5 h-3.5" /> Completed
                         </div>
                       )}

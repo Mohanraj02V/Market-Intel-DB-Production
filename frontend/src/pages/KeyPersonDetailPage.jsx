@@ -64,7 +64,7 @@ const KeyPersonDetailPage = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-slate-100">
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center border border-slate-200">
+                  <div className="w-8 h-8 rounded-xl bg-slate-50 flex items-center justify-center border border-slate-200">
                     <Building2 className="w-4 h-4 text-slate-500" />
                   </div>
                   <div>
@@ -76,7 +76,7 @@ const KeyPersonDetailPage = () => {
                 </div>
                 {contact.official_email && (
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center border border-slate-200">
+                    <div className="w-8 h-8 rounded-xl bg-slate-50 flex items-center justify-center border border-slate-200">
                       <Mail className="w-4 h-4 text-slate-500" />
                     </div>
                     <div>
@@ -92,7 +92,7 @@ const KeyPersonDetailPage = () => {
               <div className="space-y-3">
                 {contact.phone_number && (
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center border border-slate-200">
+                    <div className="w-8 h-8 rounded-xl bg-slate-50 flex items-center justify-center border border-slate-200">
                       <Phone className="w-4 h-4 text-slate-500" />
                     </div>
                     <div>
@@ -105,7 +105,7 @@ const KeyPersonDetailPage = () => {
                 )}
                 {contact.linkedin_profile && (
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center border border-blue-200">
+                    <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center border border-blue-200">
                       <ExternalLink className="w-4 h-4 text-blue-600" />
                     </div>
                     <div>
@@ -160,7 +160,7 @@ const KeyPersonDetailPage = () => {
                     <div className="text-sm text-slate-600 mt-1"><span className="font-semibold">Subject:</span> {activity.subject}</div>
                   )}
                   {activity.notes && (
-                    <div className="text-sm text-slate-600 mt-2 bg-white p-3 rounded-lg border border-slate-200 whitespace-pre-wrap">{activity.notes}</div>
+                    <div className="text-sm text-slate-600 mt-2 bg-white p-3 rounded-xl border border-slate-200 whitespace-pre-wrap">{activity.notes}</div>
                   )}
                 </div>
               </div>

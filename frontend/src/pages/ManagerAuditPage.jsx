@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldCheck, Calendar as CalendarIcon, Clock, ChevronRight, Activity, Users, UserCircle, CheckCircle, Mail, PhoneCall, X } from 'lucide-react';
 import api from '../services/api';
-
+import SearchableSelect from '../components/common/SearchableSelect';
 const ManagerAuditPage = () => {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
@@ -99,17 +99,17 @@ const ManagerAuditPage = () => {
 
   return (
     <div className="space-y-6">
-      <div className="bg-slate-900 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-lg relative overflow-hidden">
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-lg relative overflow-hidden">
         <div className="relative z-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800 text-indigo-300 text-xs font-bold uppercase tracking-wider mb-3 border border-slate-700">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-blue-50 text-xs font-bold uppercase tracking-wider mb-3 border border-white/20">
             <ShieldCheck className="w-3.5 h-3.5" /> Quality Assurance
           </div>
           <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight mb-2">Daily Audit Logs</h1>
-          <p className="text-slate-400 text-sm max-w-2xl">Review automatically sampled daily records for PRE and LQ users.</p>
+          <p className="text-blue-100 text-sm max-w-2xl">Review automatically sampled daily records for PRE and LQ users.</p>
         </div>
         <div className="relative z-10 flex flex-col items-end gap-2">
-          <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Audit Date</label>
-          <div className="flex items-center bg-slate-800 rounded-lg p-1 border border-slate-700">
+          <label className="text-xs font-bold text-blue-200 uppercase tracking-wider">Audit Date</label>
+          <div className="flex items-center bg-slate-800 rounded-xl p-1 border border-slate-700">
             <div className="pl-3 pr-2 text-slate-400">
               <CalendarIcon className="w-4 h-4" />
             </div>
@@ -181,15 +181,11 @@ const ManagerAuditPage = () => {
                     {preSamples.length > 0 && (
                       <div className="flex items-center gap-2">
                         <label className="text-sm font-bold text-slate-700">Select User:</label>
-                        <select
-                          className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-2 font-medium"
+                        <div className="w-48"><SearchableSelect
                           value={selectedPreUserId}
-                          onChange={(e) => setSelectedPreUserId(e.target.value)}
-                        >
-                          {preSamples.map(sg => (
-                            <option key={sg.pre_user_id} value={sg.pre_user_id}>{sg.pre_name}</option>
-                          ))}
-                        </select>
+                          onChange={(val) => setSelectedPreUserId(val)}
+                          options={preSamples.map(sg => ({value: sg.pre_user_id, label: sg.pre_name}))}
+                        /></div>
                       </div>
                     )}
                   </div>
@@ -232,13 +228,18 @@ const ManagerAuditPage = () => {
                                 <tbody className="divide-y divide-slate-50">
                                   {sampleGroup.sample.map(prospect => (
                                     <tr key={prospect.id} className="hover:bg-slate-50">
-                                      <td className="p-3 font-medium text-slate-900">{prospect.company_name}</td>
+                                      <td className="p-3 font-medium text-slate-900">
+                                        {prospect.company_name}
+                                        {prospect.pre_task_status === 'ISSUE_SENT_TO_PRE' && (
+                                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 uppercase tracking-wider">Re-verify Sent</span>
+                                        )}
+                                      </td>
                                       <td className="p-3 text-slate-600">{prospect.country_head_office}</td>
                                       <td className="p-3 text-slate-500">{new Date(prospect.created_at).toLocaleString()}</td>
                                       <td className="p-3 flex items-center gap-2">
                                         <button 
-                                          onClick={() => { setSelectedAuditRecord(prospect); setReverifyFields([]); setReverifyNotes(''); }}
-                                          className="px-3 py-1 bg-white border border-slate-300 text-slate-700 text-xs font-bold rounded-md hover:bg-slate-50"
+                                          onClick={() => { setSelectedAuditRecord(prospect); setReverifyFields(prospect.audit_reverify_fields || []); setReverifyNotes(''); }}
+                                          className="px-3 py-1 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-50"
                                         >
                                           Audit
                                         </button>
@@ -266,15 +267,11 @@ const ManagerAuditPage = () => {
                     {lqSamples.length > 0 && (
                       <div className="flex items-center gap-2">
                         <label className="text-sm font-bold text-slate-700">Select User:</label>
-                        <select
-                          className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-2 font-medium"
+                        <div className="w-48"><SearchableSelect
                           value={selectedLqUserId}
-                          onChange={(e) => setSelectedLqUserId(e.target.value)}
-                        >
-                          {lqSamples.map(sg => (
-                            <option key={sg.lq_user_id} value={sg.lq_user_id}>{sg.lq_name}</option>
-                          ))}
-                        </select>
+                          onChange={(val) => setSelectedLqUserId(val)}
+                          options={lqSamples.map(sg => ({value: sg.lq_user_id, label: sg.lq_name}))}
+                        /></div>
                       </div>
                     )}
                   </div>
@@ -420,7 +417,7 @@ const ManagerAuditPage = () => {
                   <div>
                     <label className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 block">Manager Notes (Optional)</label>
                     <textarea 
-                      className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500"
                       rows={4}
                       placeholder="Context for correction..."
                       value={reverifyNotes}
@@ -432,7 +429,7 @@ const ManagerAuditPage = () => {
             </div>
 
             <div className="p-6 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex justify-end gap-3 shrink-0">
-              <button onClick={() => setSelectedAuditRecord(null)} className="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 text-sm font-bold rounded-xl hover:bg-slate-50">
+              <button onClick={() => setSelectedAuditRecord(null)} className="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 text-sm font-bold rounded-xl hover:bg-slate-50">
                 Close
               </button>
               {reverifyFields.length > 0 && (

@@ -11,7 +11,7 @@ const UserManagementPage = () => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
 
-  // A Manager can create users but not edit or delete
+  // Managers have full CRUD (but are restricted from modifying superusers in backend)
   const isManager = currentUser?.role === 'MANAGER' && !currentUser?.is_superuser;
 
   useEffect(() => {
@@ -44,14 +44,14 @@ const UserManagementPage = () => {
           </h1>
           <p className="mt-2 text-sm text-slate-600">
             {isManager
-              ? 'Create new users. Contact an administrator to edit or delete accounts.'
+              ? 'Create, edit, and manage user accounts (Manager cannot modify superusers).'
               : 'Create, edit, and manage user accounts and their roles (PRE / LQ / MANAGER).'}
           </p>
         </div>
         <div className="mt-4 sm:mt-0">
           <button
             onClick={handleAddClick}
-            className="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+            className="inline-flex items-center px-4 py-2 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
           >
             <Plus className="-ml-1 mr-2 h-5 w-5" aria-hidden="true" />
             Add User
@@ -117,18 +117,14 @@ const UserManagementPage = () => {
                       {user.email || user.username}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      {isManager ? (
-                        <span className="text-xs text-slate-400 italic">View only</span>
-                      ) : (
-                        <div className="flex justify-end gap-3 items-center">
-                          <button onClick={() => handleEditClick(user)} className="text-indigo-600 hover:text-indigo-900" title="Edit User">
-                            <Edit2 size={18} />
-                          </button>
-                          <button onClick={() => handleDelete(user.id)} className="text-red-500 hover:text-red-700" title="Delete User">
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
-                      )}
+                      <div className="flex justify-end gap-3 items-center">
+                        <button onClick={() => handleEditClick(user)} className="text-indigo-600 hover:text-indigo-900" title="Edit User">
+                          <Edit2 size={18} />
+                        </button>
+                        <button onClick={() => handleDelete(user.id)} className="text-red-500 hover:text-red-700" title="Delete User">
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

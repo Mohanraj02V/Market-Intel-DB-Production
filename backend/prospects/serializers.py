@@ -61,6 +61,20 @@ class ProspectSerializer(serializers.ModelSerializer):
         child=serializers.UUIDField(), write_only=True, required=False
     )
 
+    pre_task_status = serializers.SerializerMethodField()
+    audit_reverify_fields = serializers.SerializerMethodField()
+
+    def get_pre_task_status(self, obj):
+        if hasattr(obj, 'lead_qualification') and obj.lead_qualification:
+            return obj.lead_qualification.pre_task_status
+        return None
+
+    def get_audit_reverify_fields(self, obj):
+        if hasattr(obj, 'reverification_requests'):
+            latest = obj.reverification_requests.filter(status='Pending').order_by('-created_at').first()
+            return latest.highlighted_fields if latest else []
+        return []
+
     # Internal writes for nested relationships
     offerings_data = ProspectOfferingSerializer(many=True, write_only=True, required=False)
 
@@ -73,9 +87,9 @@ class ProspectSerializer(serializers.ModelSerializer):
             'operational_status', 'parent_companies', 'parent_companies_detail', 'child_companies_detail', 'status_target',
             'primary_offering_type', 'products', 'services', 'solutions',
             'offerings_data', 'key_contacts', 'created_at', 'updated_at',
-            'created_by', 'updated_by', 'market_events', 'market_event_ids', 'company_email_verification_status', 'qualification_status'
+            'created_by', 'updated_by', 'market_events', 'market_event_ids', 'company_email_verification_status', 'qualification_status', 'pre_task_status', 'audit_reverify_fields'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by', 'market_events', 'market_event_ids', 'company_email_verification_status', 'qualification_status']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by', 'market_events', 'market_event_ids', 'company_email_verification_status', 'qualification_status', 'pre_task_status', 'audit_reverify_fields']
 
     def get_company_email_verification_status(self, obj):
         if not obj.official_email_address:

@@ -426,7 +426,7 @@ class CallbackReminderViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='pending')
     def pending(self, request):
-        reminders = self.get_queryset()
+        reminders = self.get_queryset().filter(scheduled_datetime__gt=timezone.now())
         return Response(self.get_serializer(reminders, many=True).data)
 
     @action(detail=True, methods=['patch'], url_path='mark-notified')
@@ -494,7 +494,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='pending')
     def pending(self, request):
-        meetings = self.get_queryset()
+        meetings = self.get_queryset().filter(scheduled_datetime__gt=timezone.now())
         return Response(self.get_serializer(meetings, many=True).data)
 
 
@@ -899,7 +899,11 @@ class EmailTrackingView(View):
         except Exception:
             pass  # Fail silently to avoid leaking info or breaking the pixel
 
-        return HttpResponse(PIXEL_GIF_DATA, content_type='image/gif')
+        response = HttpResponse(PIXEL_GIF_DATA, content_type='image/gif')
+        response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response['Pragma'] = 'no-cache'
+        response['Expires'] = '0'
+        return response
 
 @api_view(['GET'])
 def pre_dashboard_stats(request):

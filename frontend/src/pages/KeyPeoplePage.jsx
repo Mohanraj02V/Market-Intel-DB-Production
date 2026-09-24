@@ -121,7 +121,7 @@ const KeyPeoplePage = () => {
               <div
                 key={contact.id}
                 onClick={() => navigate(`/key-people/${contact.id}`)}
-                className={`relative bg-white rounded-2xl border ${cfg ? cfg.border : 'border-slate-200'} shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer group overflow-hidden p-5 space-y-4`}
+                className={`relative bg-white rounded-2xl border ${cfg ? `border-2 ${cfg.border}` : 'border-slate-200'} shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer group overflow-hidden p-5 space-y-4`}
               >
                 <div>
                   <div className="font-bold text-slate-900 group-hover:text-indigo-700 transition-colors text-base truncate">
@@ -135,7 +135,7 @@ const KeyPeoplePage = () => {
                   )}
                 </div>
 
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-100 text-[11px] font-semibold text-indigo-700 max-w-full overflow-hidden">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-indigo-50 border border-indigo-100 text-[11px] font-semibold text-indigo-700 max-w-full overflow-hidden">
                   <span className="truncate">{contact.prospect_name || 'Unknown Company'}</span>
                 </div>
 

@@ -44,7 +44,7 @@ const CorporateStructureTree = ({ prospect }) => {
   );
 
   const MiniCard = ({ company, badgeLabel, badgeColor }) => (
-    <div className="block p-4 rounded-lg bg-slate-800/50 border border-slate-700 hover:border-slate-500 transition-all group relative">
+    <div className="block p-4 rounded-xl bg-slate-800/50 border border-slate-700 hover:border-slate-500 transition-all group relative">
       <Link to={`/prospects/${company.id}`} className="absolute inset-0 z-0"></Link>
       <div className="flex items-center justify-between mb-2 relative z-10">
         <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${badgeColor} text-white uppercase tracking-wider`}>
@@ -82,7 +82,7 @@ const CorporateStructureTree = ({ prospect }) => {
             ))}
           </div>
         ) : (
-          <div className="text-xs text-slate-500 italic border border-slate-700/50 rounded-lg px-6 py-3 border-dashed">
+          <div className="text-xs text-slate-500 italic border border-slate-700/50 rounded-xl px-6 py-3 border-dashed">
             No Parent Organization Linked (Operates as Independent / Top-Level Entity)
           </div>
         )}
@@ -119,7 +119,7 @@ const CorporateStructureTree = ({ prospect }) => {
                 ))}
               </div>
             ) : (
-              <div className="text-center text-xs text-slate-500 py-4 border border-dashed border-slate-700 rounded-lg">
+              <div className="text-center text-xs text-slate-500 py-4 border border-dashed border-slate-700 rounded-xl">
                 No branch offices connected.
               </div>
             )}
@@ -139,7 +139,7 @@ const CorporateStructureTree = ({ prospect }) => {
                 ))}
               </div>
             ) : (
-              <div className="text-center text-xs text-slate-500 py-4 border border-dashed border-slate-700 rounded-lg">
+              <div className="text-center text-xs text-slate-500 py-4 border border-dashed border-slate-700 rounded-xl">
                 No subsidiaries connected.
               </div>
             )}

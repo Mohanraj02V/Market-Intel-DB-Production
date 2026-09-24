@@ -12,6 +12,7 @@ import {
   mergeMailboxMessages,
   resetMailboxCache,
 } from '../../services/cache/inboxCacheService';
+import { formatTimeForUser, formatDateTimeForUser } from '../../utils/timezone';
 
 /** Reminder polling interval: 30 seconds (unchanged) */
 const REMINDER_INTERVAL_MS = 30_000;
@@ -113,7 +114,7 @@ export default function NotificationCenter() {
       type: 'reminder',
       item,
       message,
-      time: new Date().toLocaleTimeString(),
+      time: formatTimeForUser(new Date().toISOString(), user?.timezone),
     };
     setActiveToasts((prev) => [...prev, newToast]);
     try {
@@ -130,7 +131,7 @@ export default function NotificationCenter() {
       type: 'audit',
       item: audit,
       message: `PRE User ${audit.pre_user_name || 'Unknown'} corrected fields for ${audit.prospect_company_name}.`,
-      time: new Date().toLocaleTimeString(),
+      time: formatTimeForUser(new Date().toISOString(), user?.timezone),
     };
     // Ensure we don't duplicate active toasts
     setActiveToasts((prev) => {
@@ -237,7 +238,7 @@ export default function NotificationCenter() {
     const toastId = `mail-${uid}`;
     setMailToasts((prev) => {
       if (prev.find((t) => t.id === toastId)) return prev; // already shown
-      return [...prev, { id: toastId, message, time: new Date().toLocaleTimeString() }];
+      return [...prev, { id: toastId, message, time: formatTimeForUser(new Date().toISOString(), user?.timezone) }];
     });
     setTimeout(() => removeMailToast(toastId), 10000);
   };
@@ -259,8 +260,7 @@ export default function NotificationCenter() {
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
   const formatTime = (isoString) => {
-    const d = new Date(isoString);
-    return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return formatDateTimeForUser(isoString, user?.timezone);
   };
 
   const totalBadge = reminders.length + meetings.length;
@@ -272,10 +272,10 @@ export default function NotificationCenter() {
       <div className="relative">
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="relative p-2 text-slate-400 hover:text-slate-600 transition-colors rounded-full hover:bg-slate-100"
+          className="relative p-1.5 text-blue-200 hover:bg-blue-500 hover:text-white transition-colors rounded-lg"
           title="Notifications"
         >
-          <Bell className="w-5 h-5" />
+          <Bell className="w-4 h-4" />
           {totalBadge > 0 && (
             <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white"></span>
           )}
@@ -295,7 +295,7 @@ export default function NotificationCenter() {
               ) : (
                 <>
                   {meetings.map((m) => (
-                    <div key={`m-${m.id}`} className="p-3 bg-white border border-sky-100 rounded-lg hover:border-sky-200 transition shadow-sm">
+                    <div key={`m-${m.id}`} className="p-3 bg-white border border-sky-100 rounded-xl hover:border-sky-200 transition shadow-sm">
                       <div className="flex items-center gap-2 mb-1.5">
                         <Clock className="w-3.5 h-3.5 text-sky-500" />
                         <span className="text-xs font-bold text-slate-700">{formatTime(m.scheduled_datetime)}</span>
@@ -306,7 +306,7 @@ export default function NotificationCenter() {
                     </div>
                   ))}
                   {reminders.map((r) => (
-                    <div key={`r-${r.id}`} className="p-3 bg-white border border-amber-100 rounded-lg hover:border-amber-200 transition shadow-sm">
+                    <div key={`r-${r.id}`} className="p-3 bg-white border border-amber-100 rounded-xl hover:border-amber-200 transition shadow-sm">
                       <div className="flex items-center gap-2 mb-1.5">
                         <Clock className="w-3.5 h-3.5 text-amber-500" />
                         <span className="text-xs font-bold text-slate-700">{formatTime(r.scheduled_datetime)}</span>
@@ -352,7 +352,7 @@ export default function NotificationCenter() {
         {mailToasts.map((toast) => (
           <div
             key={toast.id}
-            className="pointer-events-auto bg-white border-l-4 border-sky-500 rounded-lg shadow-2xl p-4 w-72 transform transition-all flex items-start gap-3 cursor-pointer"
+            className="pointer-events-auto bg-white border-l-4 border-sky-500 rounded-xl shadow-2xl p-4 w-72 transform transition-all flex items-start gap-3 cursor-pointer"
             onClick={() => { navigate('/inbox'); removeMailToast(toast.id); }}
           >
             <div className="bg-sky-100 text-sky-700 rounded-full p-2 shrink-0">

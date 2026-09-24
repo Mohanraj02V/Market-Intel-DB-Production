@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchMarketEvents } from '../../features/marketEvents/marketEventSlice';
 import { createProspect, updateProspect } from '../../features/prospects/prospectSlice';
-import { X, Plus, Trash2, Building, Network } from 'lucide-react';
+import { X, Plus, Trash2, Building, Network, Calendar } from 'lucide-react';
 import api from '../../services/api';
 import { toast } from 'react-toastify';
+import SearchableSelect from '../common/SearchableSelect';
 
 const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], onSuccess = null, readOnly = false, highlightMode = 'error' }) => {
   const hColor = highlightMode === 'success' ? 'emerald' : 'red';
@@ -32,13 +33,13 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
     primary_industries: '',
     company_structure: 'Parent',
     operational_status: 'Active',
-    parent_companies: [],
+    parent_companies: [''],
     status_target: '',
     primary_offering_type: 'Multiple',
-    products: [],
-    services: [],
-    solutions: [],
-    key_contacts: [],
+    products: [{ name: '' }],
+    services: [{ name: '' }],
+    solutions: [{ name: '' }],
+    key_contacts: [{ contact_name: '', designation: '', official_email: '', phone_number: '', linkedin_profile: '' }],
     market_event_ids: []
   });
 
@@ -56,12 +57,12 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
       dispatch(fetchMarketEvents({}));
       setFormData({
         ...prospect,
-        parent_companies: prospect.parent_companies || [],
+        parent_companies: (prospect.parent_companies && prospect.parent_companies.length > 0) ? prospect.parent_companies : [''],
         status_target: prospect.status_target || '',
-        products: prospect.products || [],
-        services: prospect.services || [],
-        solutions: prospect.solutions || [],
-        key_contacts: prospect.key_contacts || [],
+        products: (prospect.products && prospect.products.length > 0) ? prospect.products : [{ name: '' }],
+        services: (prospect.services && prospect.services.length > 0) ? prospect.services : [{ name: '' }],
+        solutions: (prospect.solutions && prospect.solutions.length > 0) ? prospect.solutions : [{ name: '' }],
+        key_contacts: (prospect.key_contacts && prospect.key_contacts.length > 0) ? prospect.key_contacts : [{ contact_name: '', designation: '', official_email: '', phone_number: '', linkedin_profile: '' }],
         market_event_ids: (prospect.market_events || []).map(e => e.id)
       });
     } else if (isOpen) {
@@ -72,8 +73,9 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
         official_phone_number: '', official_email_address: '', official_website_url: '',
         linkedin_company_page: '', primary_industries: '',
         company_structure: 'Parent', operational_status: 'Active',
-        parent_companies: [], status_target: '', primary_offering_type: 'Multiple',
-        products: [], services: [], solutions: [], key_contacts: [], market_event_ids: []
+        parent_companies: [''], status_target: '', primary_offering_type: 'Multiple',
+        products: [{ name: '' }], services: [{ name: '' }], solutions: [{ name: '' }], 
+        key_contacts: [{ contact_name: '', designation: '', official_email: '', phone_number: '', linkedin_profile: '' }], market_event_ids: []
       });
       setError(null);
     }
@@ -300,13 +302,13 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
       // Clean offerings
       const offerings = [];
       if (['Products', 'Multiple'].includes(cleanData.primary_offering_type)) {
-        offerings.push(...cleanData.products.filter(p => p.name.trim() !== ''));
+        offerings.push(...cleanData.products.filter(p => p.name.trim() !== '').map(p => ({ ...p, offering_type: 'Product' })));
       }
       if (['Services', 'Multiple'].includes(cleanData.primary_offering_type)) {
-        offerings.push(...cleanData.services.filter(p => p.name.trim() !== ''));
+        offerings.push(...cleanData.services.filter(p => p.name.trim() !== '').map(p => ({ ...p, offering_type: 'Service' })));
       }
       if (['Solutions', 'Multiple'].includes(cleanData.primary_offering_type)) {
-        offerings.push(...cleanData.solutions.filter(p => p.name.trim() !== ''));
+        offerings.push(...cleanData.solutions.filter(p => p.name.trim() !== '').map(p => ({ ...p, offering_type: 'Solution' })));
       }
       cleanData.offerings_data = offerings;
 
@@ -375,14 +377,14 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
 
         <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-slate-50/50">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
               {error}
             </div>
           )}
           <fieldset disabled={readOnly} className="space-y-8">
 
           {/* Section 1: Corporate Structure */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+          <div className="bg-slate-50/70 rounded-xl border border-slate-200 shadow-sm p-6">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
@@ -390,75 +392,83 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
                 </div>
                 <h3 className="text-lg font-medium text-slate-800">Corporate Structure & Parent Auto-Linking</h3>
               </div>
-              <span className="px-2.5 py-1 text-xs font-medium bg-indigo-50 text-indigo-700 rounded-md border border-indigo-100">
+              <span className="px-2.5 py-1 text-xs font-medium bg-indigo-50 text-indigo-700 rounded-xl border border-indigo-100">
                 Feeds Relationship Visualizer
               </span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">COMPANY STRUCTURE *</label>
-                <select name="company_structure" value={formData.company_structure} onChange={handleChange} className={`w-full rounded-lg shadow-sm sm:text-sm py-2 px-3 bg-white text-slate-900 ${highlightFields?.includes('company_structure') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`}>
-                  <option value="Parent">Parent Organization (Ultimate Holding / HQ)</option>
-                  <option value="Branch">Branch Office (Local Operational Branch)</option>
-                  <option value="Subsidiary">Subsidiary Company (Owned Subsidiary / JV)</option>
-                </select>
+                <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-2">COMPANY STRUCTURE *</label>
+                <SearchableSelect 
+                  value={formData.company_structure} 
+                  onChange={(val) => setFormData(prev => ({...prev, company_structure: val}))}
+                  options={[
+                    { value: 'Parent', label: 'Parent Organization (Ultimate Holding / HQ)' },
+                    { value: 'Branch', label: 'Branch Office (Local Operational Branch)' },
+                    { value: 'Subsidiary', label: 'Subsidiary Company (Owned Subsidiary / JV)' }
+                  ]}
+                />
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">OPERATIONAL STATUS *</label>
-                <select name="operational_status" value={formData.operational_status} onChange={handleChange} className={`w-full rounded-lg shadow-sm sm:text-sm py-2 px-3 bg-white text-slate-900 ${highlightFields?.includes('operational_status') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`}>
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
-                  <option value="Permanently Closed">Permanently Closed</option>
-                  <option value="Acquired">Acquired</option>
-                  <option value="Merged">Merged</option>
-                </select>
+                <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-2">OPERATIONAL STATUS *</label>
+                <SearchableSelect 
+                  value={formData.operational_status} 
+                  onChange={(val) => setFormData(prev => ({...prev, operational_status: val}))}
+                  options={[
+                    { value: 'Active', label: 'Active' },
+                    { value: 'Inactive', label: 'Inactive' },
+                    { value: 'Permanently Closed', label: 'Permanently Closed' },
+                    { value: 'Acquired', label: 'Acquired' },
+                    { value: 'Merged', label: 'Merged' }
+                  ]}
+                />
               </div>
             </div>
 
             {['Branch', 'Subsidiary'].includes(formData.company_structure) && (
               <div className="mt-6 pt-6 border-t border-slate-100">
                 <div className="flex justify-between items-center mb-4">
-                  <label className="block text-sm font-medium text-slate-700">PARENT COMPANY (ONE OR MORE SUPPORTED) *</label>
+                  <label className="block text-sm font-bold text-slate-700 mb-1.5">PARENT COMPANY (ONE OR MORE SUPPORTED) *</label>
                   <button type="button" onClick={handleAddParent} className="text-sm text-indigo-600 font-medium hover:text-indigo-700 flex items-center gap-1">
                     <Plus size={16} /> Add Parent
                   </button>
                 </div>
                 {formData.parent_companies.map((parent, index) => (
                   <div key={index} className="flex gap-2 mb-3">
-                    <select value={parent} onChange={(e) => handleParentChange(index, e.target.value)} className="flex-1 rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3 border bg-white text-slate-900">
-                      <option value="">Select a parent company...</option>
-                      {parentOptions.map(opt => (
-                        <option key={opt.id} value={opt.id}>{opt.company_name} ({opt.country_head_office})</option>
-                      ))}
-                    </select>
+                    <div className="flex-1"><SearchableSelect 
+                      value={parent}
+                      onChange={(val) => handleParentChange(index, val)}
+                      placeholder="Select a parent company..."
+                      options={parentOptions.map(opt => ({ value: opt.id, label: `${opt.company_name} (${opt.country_head_office})` }))}
+                    /></div>
                     <button type="button" onClick={() => handleRemoveParent(index)} className="p-2 text-slate-400 hover:text-red-500">
                       <Trash2 size={18} />
                     </button>
                   </div>
                 ))}
                 {formData.parent_companies.length === 0 && (
-                  <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg border border-amber-100">Please add at least one parent company.</div>
+                  <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded-xl border border-amber-100">Please add at least one parent company.</div>
                 )}
               </div>
             )}
 
             {['Acquired', 'Merged'].includes(formData.operational_status) && (
               <div className="mt-6 pt-6 border-t border-slate-100">
-                <label className="block text-sm font-medium text-slate-700 mb-2">TARGET / SURVIVING COMPANY</label>
-                <select name="status_target" value={formData.status_target} onChange={handleChange} className="w-full md:w-1/2 rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3 border bg-white text-slate-900">
-                  <option value="">Select target company...</option>
-                  {targetOptions.map(opt => (
-                    <option key={opt.id} value={opt.id}>{opt.company_name}</option>
-                  ))}
-                </select>
+                <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-2">TARGET / SURVIVING COMPANY</label>
+                <div className="w-full md:w-1/2"><SearchableSelect 
+                  value={formData.status_target}
+                  onChange={(val) => setFormData(prev => ({...prev, status_target: val}))}
+                  placeholder="Select target company..."
+                  options={targetOptions.map(opt => ({ value: opt.id, label: opt.company_name }))}
+                /></div>
               </div>
             )}
           </div>
 
           {/* Section 2: General Information */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+          <div className="bg-slate-50/70 rounded-xl border border-slate-200 shadow-sm p-6">
             <div className="flex items-center gap-3 mb-6">
               <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
                 <Building size={20} />
@@ -469,28 +479,28 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
             <div className="space-y-5">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Company Name *</label>
-                  <input type="text" name="company_name" value={formData.company_name} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('company_name') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
+                  <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-1">Company Name *</label>
+                  <input type="text" name="company_name" value={formData.company_name} onChange={handleChange} className={`w-full rounded-xl shadow-sm text-sm px-4 py-3 text-slate-900 bg-white outline-none transition-all ${highlightFields?.includes('company_name') ? hClass : 'border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100'}`} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Country (Head Office) *</label>
-                  <input type="text" name="country_head_office" value={formData.country_head_office} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('country_head_office') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
+                  <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-1">Country (Head Office) *</label>
+                  <input type="text" name="country_head_office" value={formData.country_head_office} onChange={handleChange} className={`w-full rounded-xl shadow-sm text-sm px-4 py-3 text-slate-900 bg-white outline-none transition-all ${highlightFields?.includes('country_head_office') ? hClass : 'border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100'}`} />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Complete Address *</label>
-                <textarea name="complete_address" rows="2" value={formData.complete_address} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('complete_address') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`}></textarea>
+                <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-1">Complete Address *</label>
+                <textarea name="complete_address" rows="2" value={formData.complete_address} onChange={handleChange} className={`w-full rounded-xl shadow-sm text-sm px-4 py-3 text-slate-900 bg-white outline-none transition-all ${highlightFields?.includes('complete_address') ? hClass : 'border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100'}`}></textarea>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Official Phone Number</label>
-                  <input type="text" name="official_phone_number" value={formData.official_phone_number} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('official_phone_number') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
+                  <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-1">Official Phone Number</label>
+                  <input type="text" name="official_phone_number" value={formData.official_phone_number} onChange={handleChange} className={`w-full rounded-xl shadow-sm text-sm px-4 py-3 text-slate-900 bg-white outline-none transition-all ${highlightFields?.includes('official_phone_number') ? hClass : 'border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100'}`} />
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block text-sm font-medium text-slate-700">Official Email Address</label>
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5">Official Email Address</label>
                     {(user?.role === 'PRE' || user?.role === 'LQ') && formData.official_email_address && (
                       <div className="flex items-center gap-2">
                         {instantVerificationStatus ? (
@@ -524,39 +534,47 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
                       </div>
                     )}
                   </div>
-                  <input type="email" name="official_email_address" value={formData.official_email_address} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('official_email_address') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
+                  <input type="email" name="official_email_address" value={formData.official_email_address} onChange={handleChange} className={`w-full rounded-xl shadow-sm text-sm px-4 py-3 text-slate-900 bg-white outline-none transition-all ${highlightFields?.includes('official_email_address') ? hClass : 'border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100'}`} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Official Website URL</label>
-                  <input type="url" name="official_website_url" value={formData.official_website_url} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('official_website_url') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
+                  <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-1">Official Website URL</label>
+                  <input type="url" name="official_website_url" value={formData.official_website_url} onChange={handleChange} className={`w-full rounded-xl shadow-sm text-sm px-4 py-3 text-slate-900 bg-white outline-none transition-all ${highlightFields?.includes('official_website_url') ? hClass : 'border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100'}`} />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">LinkedIn Company Page</label>
-                  <input type="url" name="linkedin_company_page" value={formData.linkedin_company_page} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('linkedin_company_page') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
+                  <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-1">LinkedIn Company Page</label>
+                  <input type="url" name="linkedin_company_page" value={formData.linkedin_company_page} onChange={handleChange} className={`w-full rounded-xl shadow-sm text-sm px-4 py-3 text-slate-900 bg-white outline-none transition-all ${highlightFields?.includes('linkedin_company_page') ? hClass : 'border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100'}`} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Primary Industries *</label>
-                  <input type="text" name="primary_industries" value={formData.primary_industries} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('primary_industries') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
+                  <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-1">Primary Industries *</label>
+                  <input type="text" name="primary_industries" value={formData.primary_industries} onChange={handleChange} className={`w-full rounded-xl shadow-sm text-sm px-4 py-3 text-slate-900 bg-white outline-none transition-all ${highlightFields?.includes('primary_industries') ? hClass : 'border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100'}`} />
                 </div>
               </div>
             </div>
           </div>
 
           {/* Section 3: Market Offerings */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+          <div className="bg-slate-50/70 rounded-xl border border-slate-200 shadow-sm p-6">
             <h3 className="text-lg font-medium text-slate-800 mb-4">Market Offerings</h3>
             
             <div className="mb-6">
-              <label className="block text-sm font-medium text-slate-700 mb-3">Primary Offering Type</label>
-              <div className="flex flex-wrap gap-4">
+              <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-3">Primary Offering Type</label>
+              <div className="flex flex-wrap gap-3">
                 {['Products', 'Services', 'Solutions', 'Multiple'].map(type => (
-                  <label key={type} className="inline-flex items-center">
-                    <input type="radio" name="primary_offering_type" value={type} checked={formData.primary_offering_type === type} onChange={handleChange} className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-slate-300" />
-                    <span className="ml-2 text-sm text-slate-700">{type}</span>
-                  </label>
+                  <button 
+                    key={type} 
+                    type="button" 
+                    onClick={() => setFormData(prev => ({...prev, primary_offering_type: type}))}
+                    className={`px-5 py-2.5 rounded-md text-sm font-bold transition-colors border ${
+                      formData.primary_offering_type === type 
+                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-500/30' 
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {type}
+                  </button>
                 ))}
               </div>
             </div>
@@ -565,14 +583,14 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
               {['Products', 'Multiple'].includes(formData.primary_offering_type) && (
                 <div>
                   <div className="flex justify-between items-center mb-3">
-                    <label className="block text-sm font-medium text-slate-700">PRODUCTS OFFERED</label>
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5">PRODUCTS OFFERED</label>
                     <button type="button" onClick={() => handleAddOffering('products')} className="text-sm text-indigo-600 hover:text-indigo-700 flex items-center gap-1 font-medium">
                       <Plus size={16} /> Add Products Offer
                     </button>
                   </div>
                   {formData.products.map((item, index) => (
                     <div key={index} className="flex gap-2 mb-2">
-                      <input type="text" value={item.name} onChange={(e) => handleOfferingChange('products', index, e.target.value)} placeholder="e.g. Enterprise Cloud Servers" className="flex-1 rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3 border text-slate-900" />
+                      <input type="text" value={item.name} onChange={(e) => handleOfferingChange('products', index, e.target.value)} placeholder="e.g. Enterprise Cloud Servers" className="flex-1 rounded-xl bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-sm px-4 py-3 text-slate-900 transition-all outline-none shadow-sm" />
                       <button type="button" onClick={() => handleRemoveOffering('products', index)} className="p-2 text-slate-400 hover:text-red-500"><Trash2 size={18} /></button>
                     </div>
                   ))}
@@ -582,14 +600,14 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
               {['Services', 'Multiple'].includes(formData.primary_offering_type) && (
                 <div>
                   <div className="flex justify-between items-center mb-3">
-                    <label className="block text-sm font-medium text-slate-700">SERVICES PROVIDED</label>
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5">SERVICES PROVIDED</label>
                     <button type="button" onClick={() => handleAddOffering('services')} className="text-sm text-indigo-600 hover:text-indigo-700 flex items-center gap-1 font-medium">
                       <Plus size={16} /> Add Services Provide
                     </button>
                   </div>
                   {formData.services.map((item, index) => (
                     <div key={index} className="flex gap-2 mb-2">
-                      <input type="text" value={item.name} onChange={(e) => handleOfferingChange('services', index, e.target.value)} placeholder="e.g. IT Strategy & Consulting" className="flex-1 rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3 border text-slate-900" />
+                      <input type="text" value={item.name} onChange={(e) => handleOfferingChange('services', index, e.target.value)} placeholder="e.g. IT Strategy & Consulting" className="flex-1 rounded-xl bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-sm px-4 py-3 text-slate-900 transition-all outline-none shadow-sm" />
                       <button type="button" onClick={() => handleRemoveOffering('services', index)} className="p-2 text-slate-400 hover:text-red-500"><Trash2 size={18} /></button>
                     </div>
                   ))}
@@ -599,14 +617,14 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
               {['Solutions', 'Multiple'].includes(formData.primary_offering_type) && (
                 <div>
                   <div className="flex justify-between items-center mb-3">
-                    <label className="block text-sm font-medium text-slate-700">SOLUTIONS PROVIDED</label>
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5">SOLUTIONS PROVIDED</label>
                     <button type="button" onClick={() => handleAddOffering('solutions')} className="text-sm text-indigo-600 hover:text-indigo-700 flex items-center gap-1 font-medium">
                       <Plus size={16} /> Add Solutions Provide
                     </button>
                   </div>
                   {formData.solutions.map((item, index) => (
                     <div key={index} className="flex gap-2 mb-2">
-                      <input type="text" value={item.name} onChange={(e) => handleOfferingChange('solutions', index, e.target.value)} placeholder="e.g. Digital Transformation Package" className="flex-1 rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3 border text-slate-900" />
+                      <input type="text" value={item.name} onChange={(e) => handleOfferingChange('solutions', index, e.target.value)} placeholder="e.g. Digital Transformation Package" className="flex-1 rounded-xl bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-sm px-4 py-3 text-slate-900 transition-all outline-none shadow-sm" />
                       <button type="button" onClick={() => handleRemoveOffering('solutions', index)} className="p-2 text-slate-400 hover:text-red-500"><Trash2 size={18} /></button>
                     </div>
                   ))}
@@ -617,16 +635,16 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
 
           
           {/* Section 4: Market Events */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+          <div className="bg-slate-50/70 rounded-xl border border-slate-200 shadow-sm p-6">
             <div className="flex items-center gap-3 mb-6">
               <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600 font-bold">
-                ME
+                <Calendar size={20} />
               </div>
               <h3 className="text-lg font-medium text-slate-800">Market Events</h3>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-3">
+              <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-3">
                 Associate Market Events
               </label>
               <div className="space-y-4">
@@ -635,7 +653,7 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
                     const event = marketEventsList?.find(e => e.id === id);
                     if (!event) return null;
                     return (
-                      <div key={id} className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-medium border border-indigo-100">
+                      <div key={id} className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-xl text-sm font-medium border border-indigo-100">
                         {event.event_title}
                         <button 
                           type="button" 
@@ -649,30 +667,20 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
                   })}
                 </div>
                 
-                <select 
-                  className="w-full rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3 border bg-white text-slate-900"
-                  onChange={(e) => {
-                    if(e.target.value) handleMarketEventToggle(e.target.value);
-                    e.target.value = "";
-                  }}
+                <SearchableSelect 
                   value=""
-                >
-                  <option value="" disabled>+ Select an event to add...</option>
-                  {(!marketEventsList || marketEventsList.length === 0) && (
-                    <option value="none" disabled>No events created yet</option>
-                  )}
-                  {marketEventsList && marketEventsList.filter(e => !(formData.market_event_ids || []).includes(e.id)).map(event => (
-                    <option key={event.id} value={event.id}>
-                      {event.event_title} ({event.host_country})
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => {
+                    if(val) handleMarketEventToggle(val);
+                  }}
+                  placeholder="+ Select an event to add..."
+                  options={(!marketEventsList || marketEventsList.length === 0) ? [{ value: 'none', label: 'No events created yet' }] : marketEventsList.filter(e => !(formData.market_event_ids || []).includes(e.id)).map(e => ({ value: e.id, label: `${e.event_title} (${e.host_country})` }))}
+                />
               </div>
             </div>
           </div>
 
           {/* Section 5: Key Contacts */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+          <div className="bg-slate-50/70 rounded-xl border border-slate-200 shadow-sm p-6">
             <div className="flex justify-between items-start mb-6">
               <div>
                 <h3 className="text-lg font-medium text-slate-800">Key Contacts / Personnel</h3>
@@ -685,18 +693,18 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
 
             <div className="space-y-4">
               {formData.key_contacts.map((contact, index) => (
-                <div key={index} className="p-4 rounded-lg border border-slate-200 bg-slate-50/50 relative">
+                <div key={index} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 relative">
                   <button type="button" onClick={() => handleRemoveContact(index)} className="absolute top-4 right-4 text-slate-400 hover:text-red-500">
                     <Trash2 size={18} />
                   </button>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mr-8">
                     <div>
                       <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">Contact Name</label>
-                      <input type="text" value={contact.contact_name} onChange={(e) => handleContactChange(index, 'contact_name', e.target.value)} className="w-full rounded border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-1.5 px-3 border text-slate-900" />
+                      <input type="text" value={contact.contact_name} onChange={(e) => handleContactChange(index, 'contact_name', e.target.value)} className="w-full rounded-xl bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-sm px-4 py-3 text-slate-900 transition-all outline-none shadow-sm" />
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">Designation / Role</label>
-                      <input type="text" value={contact.designation} onChange={(e) => handleContactChange(index, 'designation', e.target.value)} className="w-full rounded border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-1.5 px-3 border text-slate-900" />
+                      <input type="text" value={contact.designation} onChange={(e) => handleContactChange(index, 'designation', e.target.value)} className="w-full rounded-xl bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-sm px-4 py-3 text-slate-900 transition-all outline-none shadow-sm" />
                     </div>
                     <div>
                       <div className="flex items-center justify-between mb-1">
@@ -726,21 +734,21 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
                           </div>
                         )}
                       </div>
-                      <input type="email" value={contact.official_email} onChange={(e) => handleContactChange(index, 'official_email', e.target.value)} className="w-full rounded border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-1.5 px-3 border text-slate-900" />
+                      <input type="email" value={contact.official_email} onChange={(e) => handleContactChange(index, 'official_email', e.target.value)} className="w-full rounded-xl bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-sm px-4 py-3 text-slate-900 transition-all outline-none shadow-sm" />
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">Phone Number</label>
-                      <input type="text" value={contact.phone_number} onChange={(e) => handleContactChange(index, 'phone_number', e.target.value)} className={`w-full rounded shadow-sm sm:text-sm py-1.5 px-3 text-slate-900 ${contact.latest_call_status === 'Invalid Number' ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
+                      <input type="text" value={contact.phone_number} onChange={(e) => handleContactChange(index, 'phone_number', e.target.value)} className={`w-full rounded-md shadow-sm sm:text-sm px-4 py-2.5 text-slate-900 bg-white outline-none transition-colors ${contact.latest_call_status === 'Invalid Number' ? hClass : 'border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500'}`} />
                     </div>
                     <div className="md:col-span-2">
                       <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">LinkedIn Profile</label>
-                      <input type="url" value={contact.linkedin_profile} onChange={(e) => handleContactChange(index, 'linkedin_profile', e.target.value)} className="w-full rounded border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-1.5 px-3 border text-slate-900" />
+                      <input type="url" value={contact.linkedin_profile} onChange={(e) => handleContactChange(index, 'linkedin_profile', e.target.value)} className="w-full rounded-xl bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-sm px-4 py-3 text-slate-900 transition-all outline-none shadow-sm" />
                     </div>
                   </div>
                 </div>
               ))}
               {formData.key_contacts.length === 0 && (
-                <div className="text-center py-6 text-slate-500 text-sm border border-dashed border-slate-300 rounded-xl">
+                <div className="text-center py-6 text-slate-500 text-sm border border-dashed border-slate-200 rounded-xl">
                   No contacts added yet.
                 </div>
               )}
@@ -750,7 +758,7 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
         </div>
 
         <div className="px-6 py-4 border-t border-slate-200 bg-white flex justify-end gap-3 sticky bottom-0">
-          <button type="button" onClick={onClose} className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 text-sm font-medium transition-colors">
+          <button type="button" onClick={onClose} className="px-4 py-2 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 text-sm font-medium transition-colors">
             {readOnly ? 'Close' : 'Cancel'}
           </button>
           {!readOnly && (

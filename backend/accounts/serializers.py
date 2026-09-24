@@ -4,11 +4,12 @@ from .models import UserProfile
 
 class UserSerializer(serializers.ModelSerializer):
     role = serializers.ChoiceField(choices=UserProfile.ROLE_CHOICES, source='profile.role', required=False)
+    timezone = serializers.CharField(source='profile.timezone', required=False)
     is_superuser = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'password', 'role', 'is_superuser']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'password', 'role', 'timezone', 'is_superuser']
         extra_kwargs = {
             'password': {'write_only': True, 'required': False},
             'username': {'required': False} # In case email is used as username
@@ -31,6 +32,10 @@ class UserSerializer(serializers.ModelSerializer):
         # The UserProfile is auto-created by the signal, so we just update it
         if 'role' in profile_data:
             user.profile.role = profile_data['role']
+        if 'timezone' in profile_data:
+            user.profile.timezone = profile_data['timezone']
+        
+        if 'role' in profile_data or 'timezone' in profile_data:
             user.profile.save()
 
         return user
@@ -52,6 +57,10 @@ class UserSerializer(serializers.ModelSerializer):
 
         if 'role' in profile_data:
             instance.profile.role = profile_data['role']
+        if 'timezone' in profile_data:
+            instance.profile.timezone = profile_data['timezone']
+            
+        if 'role' in profile_data or 'timezone' in profile_data:
             instance.profile.save()
 
         return instance

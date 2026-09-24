@@ -41,9 +41,30 @@ class UserMeView(APIView):
             'first_name': user.first_name,
             'last_name': user.last_name,
             'role': profile.role if profile else 'PRE',
+            'timezone': profile.timezone if profile else 'UTC',
             'is_superuser': user.is_superuser,
             'mail_account_id': mail_account_id,
         })
+
+    def patch(self, request):
+        user = request.user
+        profile = getattr(user, 'profile', None)
+        if not profile:
+            from .models import UserProfile
+            profile = UserProfile.objects.create(user=user)
+        
+        timezone_val = request.data.get('timezone')
+        if timezone_val:
+            import zoneinfo
+            try:
+                zoneinfo.ZoneInfo(timezone_val)
+                profile.timezone = timezone_val
+                profile.save(update_fields=['timezone'])
+            except Exception:
+                from rest_framework import status
+                return Response({'error': 'Invalid timezone'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({'status': 'updated', 'timezone': profile.timezone})
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all().select_related('profile').order_by('-date_joined')
@@ -52,17 +73,10 @@ class UserViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         """
         Superuser: full CRUD.
-        Manager: list, retrieve, create only (non-superuser).
+        Manager: full CRUD (but restricted from handling superusers in methods).
         Others: 403.
         """
-        if self.action in ['list', 'retrieve']:
-            # Both superuser and Manager can view
-            return [IsAuthenticated(), IsManagerUser()]
-        elif self.action == 'create':
-            return [IsAuthenticated(), IsManagerUser()]
-        else:
-            # update, partial_update, destroy — superuser only
-            return [IsSuperUser()]
+        return [IsAuthenticated(), IsManagerUser()]
 
     def create(self, request, *args, **kwargs):
         # Prevent Manager from creating a superuser
@@ -98,7 +112,45 @@ class UserViewSet(viewsets.ModelViewSet):
         else:
             serializer.save()
 
+    def update(self, request, *args, **kwargs):
+        # Prevent Manager from editing a superuser or making someone a superuser
+        user = request.user
+        is_manager = (
+            not user.is_superuser and
+            hasattr(user, 'profile') and
+            user.profile.role == 'MANAGER'
+        )
+        if is_manager:
+            instance = self.get_object()
+            if instance.is_superuser:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("Managers cannot edit superuser accounts.")
+            
+            if request.data.get('is_superuser') or request.data.get('is_staff'):
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("Managers cannot grant superuser or staff status.")
+                
+            data = request.data.copy()
+            data.pop('is_superuser', None)
+            data.pop('is_staff', None)
+            request._full_data = data
+            
+        return super().update(request, *args, **kwargs)
 
+    def destroy(self, request, *args, **kwargs):
+        # Prevent Manager from deleting a superuser
+        user = request.user
+        is_manager = (
+            not user.is_superuser and
+            hasattr(user, 'profile') and
+            user.profile.role == 'MANAGER'
+        )
+        if is_manager:
+            instance = self.get_object()
+            if instance.is_superuser:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("Managers cannot delete superuser accounts.")
+        return super().destroy(request, *args, **kwargs)
 class _SuperOrManager(BasePermission):
     """Allows superuser or Manager role."""
     def has_permission(self, request, view):
@@ -209,8 +261,8 @@ class MailAccountViewSet(viewsets.ModelViewSet):
                 )
 
             all_uids = uid_data[0].split()
-            # Fetch up to 100 recent emails to allow for filtering, we will break when we hit `limit` owned emails
-            recent_uids = all_uids[-100:]
+            # Fetch up to 1000 recent emails to allow for filtering, we will break when we hit `limit` owned emails
+            recent_uids = all_uids[-1000:]
             recent_uids.reverse()  # newest first
 
             emails_list = []

@@ -6,6 +6,7 @@ import ProspectForm from '../components/prospects/ProspectForm';
 import { Plus, Search, Edit2, Trash2, Building2, Eye, CheckCircle, XCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import Pagination from '../components/layout/Pagination';
+import SearchableSelect from '../components/common/SearchableSelect';
 
 const ProspectsPage = () => {
   const dispatch = useDispatch();
@@ -86,7 +87,7 @@ const ProspectsPage = () => {
           {user?.role === 'PRE' && (
           <button
             onClick={handleAddClick}
-            className="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+            className="inline-flex items-center px-4 py-2 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
           >
             <Plus className="-ml-1 mr-2 h-5 w-5" aria-hidden="true" />
             Add Prospect
@@ -104,29 +105,25 @@ const ProspectsPage = () => {
               </div>
               <input
                 type="text"
-                className="block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg leading-5 bg-white placeholder-slate-500 focus:outline-none focus:placeholder-slate-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-colors"
+                className="block w-full pl-10 pr-3 py-2 border border-slate-200 rounded-xl leading-5 bg-white placeholder-slate-500 focus:outline-none focus:placeholder-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 sm:text-sm transition-colors"
                 placeholder="Search companies..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </form>
             
-            <select
-              className="w-64 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+            <div className="w-64"><SearchableSelect
               value={marketEventFilter}
-              onChange={(e) => {
-                setMarketEventFilter(e.target.value);
+              onChange={(val) => {
+                setMarketEventFilter(val);
                 setPage(1);
               }}
-            >
-              <option value="">All Market Events</option>
-              {(!marketEventsList || marketEventsList.length === 0) && (
-                <option value="none" disabled>No events created yet</option>
-              )}
-              {marketEventsList && marketEventsList.map(event => (
-                <option key={event.id} value={event.id}>{event.event_title}</option>
-              ))}
-            </select>
+              placeholder="All Market Events"
+              options={[
+                {value: '', label: 'All Market Events'},
+                ...((marketEventsList || []).map(event => ({value: event.id, label: event.event_title})))
+              ]}
+            /></div>
           </div>
           
           <div className="text-sm text-slate-500 font-medium">

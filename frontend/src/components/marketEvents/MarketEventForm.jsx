@@ -114,7 +114,7 @@ const MarketEventForm = ({ isOpen, onClose, initialData = null }) => {
 
         <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
           {error && (
-            <div className="mb-6 p-4 bg-red-50 text-red-600 rounded-lg text-sm font-medium border border-red-100">
+            <div className="mb-6 p-4 bg-red-50 text-red-600 rounded-xl text-sm font-medium border border-red-100">
               {error}
             </div>
           )}
@@ -133,7 +133,7 @@ const MarketEventForm = ({ isOpen, onClose, initialData = null }) => {
                   value={formData.event_title}
                   onChange={handleChange}
                   placeholder="e.g. Global Technology Summit 2026"
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm font-medium text-slate-900 placeholder-slate-400"
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-sm font-medium text-slate-900 placeholder-slate-400"
                 />
               </div>
 
@@ -148,7 +148,7 @@ const MarketEventForm = ({ isOpen, onClose, initialData = null }) => {
                   value={formData.host_country}
                   onChange={handleChange}
                   placeholder="e.g. United States"
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm font-medium text-slate-900 placeholder-slate-400"
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-sm font-medium text-slate-900 placeholder-slate-400"
                 />
               </div>
 
@@ -164,7 +164,7 @@ const MarketEventForm = ({ isOpen, onClose, initialData = null }) => {
                     required
                     value={formData.start_date}
                     onChange={handleChange}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm font-medium text-slate-900"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-sm font-medium text-slate-900"
                   />
                 </div>
                 <div>
@@ -179,7 +179,7 @@ const MarketEventForm = ({ isOpen, onClose, initialData = null }) => {
                     value={formData.end_date}
                     onChange={handleChange}
                     min={formData.start_date}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm font-medium text-slate-900"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-sm font-medium text-slate-900"
                   />
                 </div>
               </div>
@@ -192,7 +192,7 @@ const MarketEventForm = ({ isOpen, onClose, initialData = null }) => {
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2.5 text-sm font-semibold text-slate-600 hover:text-slate-800 bg-white border border-slate-200 hover:border-slate-300 rounded-lg shadow-sm transition-all"
+            className="px-5 py-2.5 text-sm font-semibold text-slate-600 hover:text-slate-800 bg-white border border-slate-200 hover:border-slate-200 rounded-xl shadow-sm transition-all"
             disabled={loading}
           >
             Cancel

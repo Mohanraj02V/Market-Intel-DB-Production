@@ -65,7 +65,7 @@ const ProspectDetailPage = () => {
   const p = selectedProspect;
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="space-y-6">
       <div>
         <Link to="/prospects" className="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800 mb-4 transition-colors">
           <ArrowLeft size={16} className="mr-1" /> Back to Prospects
@@ -137,7 +137,7 @@ const ProspectDetailPage = () => {
                           type="button"
                           onClick={() => handleVerifyEmail(p.official_email_address, null)}
                           disabled={verifyingEmail === p.official_email_address}
-                          className="shrink-0 px-2 py-0.5 bg-white border border-slate-300 text-slate-600 rounded text-[10px] font-bold hover:bg-slate-50 transition disabled:opacity-50"
+                          className="shrink-0 px-2 py-0.5 bg-white border border-slate-200 text-slate-600 rounded text-[10px] font-bold hover:bg-slate-50 transition disabled:opacity-50"
                         >
                           {verifyingEmail === p.official_email_address ? 'Verifying...' : 'Verify'}
                         </button>
@@ -165,7 +165,7 @@ const ProspectDetailPage = () => {
             <div className="p-6 space-y-4">
               {p.key_contacts && p.key_contacts.length > 0 ? (
                 p.key_contacts.map((contact, i) => (
-                  <div key={i} className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                  <div key={i} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                     <div className="font-medium text-sm text-slate-900">{contact.contact_name}</div>
                     <div className="text-xs text-slate-500 mb-2">{contact.designation || 'No designation'}</div>
                     {contact.official_email && (
@@ -224,7 +224,7 @@ const ProspectDetailPage = () => {
                   <h4 className="text-sm font-semibold text-slate-700 mb-3">Products</h4>
                   <ul className="space-y-2">
                     {p.products.map((item, i) => (
-                      <li key={i} className="text-sm text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100">{item.name}</li>
+                      <li key={i} className="text-sm text-slate-600 bg-slate-50 p-2 rounded-xl border border-slate-100">{item.name}</li>
                     ))}
                   </ul>
                 </div>
@@ -234,7 +234,7 @@ const ProspectDetailPage = () => {
                   <h4 className="text-sm font-semibold text-slate-700 mb-3">Services</h4>
                   <ul className="space-y-2">
                     {p.services.map((item, i) => (
-                      <li key={i} className="text-sm text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100">{item.name}</li>
+                      <li key={i} className="text-sm text-slate-600 bg-slate-50 p-2 rounded-xl border border-slate-100">{item.name}</li>
                     ))}
                   </ul>
                 </div>
@@ -244,7 +244,7 @@ const ProspectDetailPage = () => {
                   <h4 className="text-sm font-semibold text-slate-700 mb-3">Solutions</h4>
                   <ul className="space-y-2">
                     {p.solutions.map((item, i) => (
-                      <li key={i} className="text-sm text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100">{item.name}</li>
+                      <li key={i} className="text-sm text-slate-600 bg-slate-50 p-2 rounded-xl border border-slate-100">{item.name}</li>
                     ))}
                   </ul>
                 </div>
@@ -263,7 +263,7 @@ const ProspectDetailPage = () => {
             <div className="p-6 space-y-3">
               {p.market_events && p.market_events.length > 0 ? (
                 p.market_events.map((event, i) => (
-                  <div key={i} className="p-3 bg-indigo-50 rounded-lg border border-indigo-100 transition-colors group">
+                  <div key={i} className="p-3 bg-indigo-50 rounded-xl border border-indigo-100 transition-colors group">
                     <Link to={`/market-events/${event.id}`} className="block">
                       <div className="font-medium text-sm text-indigo-900 group-hover:text-indigo-700">{event.event_title}</div>
                       <div className="text-xs text-indigo-600/80 mt-1 flex items-center gap-2">

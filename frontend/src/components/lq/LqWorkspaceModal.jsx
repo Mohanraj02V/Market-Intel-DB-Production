@@ -19,6 +19,7 @@ import { fetchCommunications, sendOutreachEmail, recordCall, syncImap } from '..
 import { confirmReverification } from '../../features/lqPipeline/lqPipelineSlice';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
+import { localDateTimeToUTC } from '../../utils/timezone';
 
 const TimeSelect = ({ value, onChange, className }) => {
   const parseTime = (val) => {
@@ -41,14 +42,14 @@ const TimeSelect = ({ value, onChange, className }) => {
 
   return (
     <div className={`flex items-center gap-1 ${className || ''}`}>
-      <select value={h} onChange={(e) => updateTime(e.target.value, m, ampm)} className="p-2 flex-1 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-center font-bold">
+      <select value={h} onChange={(e) => updateTime(e.target.value, m, ampm)} className="p-2 flex-1 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-center font-bold">
         {Array.from({length: 12}, (_, i) => String(i+1).padStart(2, '0')).map(hr => <option key={hr} value={hr}>{hr}</option>)}
       </select>
       <span className="font-bold text-slate-700">:</span>
-      <select value={m} onChange={(e) => updateTime(h, e.target.value, ampm)} className="p-2 flex-1 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-center font-bold">
+      <select value={m} onChange={(e) => updateTime(h, e.target.value, ampm)} className="p-2 flex-1 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-center font-bold">
         {Array.from({length: 60}, (_, i) => String(i).padStart(2, '0')).map(min => <option key={min} value={min}>{min}</option>)}
       </select>
-      <select value={ampm} onChange={(e) => updateTime(h, m, e.target.value)} className="p-2 flex-1 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-center font-bold">
+      <select value={ampm} onChange={(e) => updateTime(h, m, e.target.value)} className="p-2 flex-1 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-center font-bold">
         <option value="AM">AM</option>
         <option value="PM">PM</option>
       </select>
@@ -71,6 +72,7 @@ export default function LqWorkspaceModal({
 }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const dispatch = useDispatch();
+  const { user } = useSelector(state => state.auth);
   
   // Get safe prospect reference
   const prospect = selectedLq?.prospect || {};
@@ -412,7 +414,7 @@ const handleAddCustomRecipient = (e) => {
         company_phone: callPhone,
         notes: `[Data Entered For: ${inboundDate} at ${inboundTime}]\n${callTranscriptNotes.trim()}`,
         direction: 'INBOUND',
-        call_started_at: new Date(`${inboundDate}T${inboundTime}:00`).toISOString()
+        call_started_at: localDateTimeToUTC(inboundDate, inboundTime, user?.timezone)
       })).unwrap();
 
       fetchOutreachLogs();
@@ -562,11 +564,15 @@ const handleAddCustomRecipient = (e) => {
       // If Invalid Number, report issue to PRE and close
       if (callStatus === 'Invalid Number') {
         try {
+          const fieldToMark = selectedContactId ? 'keyContacts' : 'contactNo';
+          const updatedChecklist = { ...verificationFields, [fieldToMark]: 'Incorrect' };
+
           await api.post(`/lq-pipeline/${selectedLq.id}/report-issue/`, {
             issue_category: 'Invalid Phone Number',
-            issue_details: `The phone number is invalid. Please find the correct contact number.`
+            issue_details: `The phone number is invalid. Please find the correct contact number.`,
+            verification_checklist: updatedChecklist
           });
-          toast.info("Issue reported to PRE: Invalid Number. Contact restricted.");
+          toast.info(`Issue reported to PRE: Invalid Number (${fieldToMark === 'keyContacts' ? 'Key Contact' : 'Official Number'}).`);
           setLocalIssueSent(true);
         } catch (err) {
           console.error("Failed to report invalid number issue", err);
@@ -585,16 +591,12 @@ const handleAddCustomRecipient = (e) => {
     setCallError('');
 
     // Reminders
-    if (callStatus === 'Connected' && ['Call Back Later', 'Lead Qualified'].includes(communicationOutcome)) {
-      const dVal = communicationOutcome === 'Lead Qualified' ? meetingDate : callbackDate;
-      const tVal = communicationOutcome === 'Lead Qualified' ? meetingTime : callbackTime;
-      const descVal = communicationOutcome === 'Lead Qualified' ? `Meeting\nLink: ${meetingLink}\nAgenda: ${leadQualifiedDescription}` : (callbackDescription || 'Call Back Later');
-      if (dVal && tVal) {
+    if (callStatus === 'Connected' && communicationOutcome === 'Call Back Later') {
+      if (callbackDate && callbackTime) {
         try {
-          const scheduled_datetime = new Date(`${dVal}T${tVal}:00`).toISOString();
-          api.post('/reminders/', { prospect: prospect.id, prospect_contact: selectedContactId || null, scheduled_datetime, description: descVal });
-          if (communicationOutcome === 'Call Back Later') { setCallbackDate(''); setCallbackTime(''); setCallbackDescription(''); }
-          else { setMeetingDate(''); setMeetingTime(''); setMeetingLink(''); setLeadQualifiedDescription(''); }
+          const scheduled_datetime = localDateTimeToUTC(callbackDate, callbackTime, user?.timezone);
+          api.post('/reminders/', { prospect: prospect.id, prospect_contact: selectedContactId || null, scheduled_datetime, description: callbackDescription || 'Call Back Later' });
+          setCallbackDate(''); setCallbackTime(''); setCallbackDescription('');
         } catch (e) {}
       }
     }
@@ -640,7 +642,7 @@ const handleAddCustomRecipient = (e) => {
 
         // Save Meeting if date & time exist
         if (meetingDate && meetingTime) {
-          const scheduled_datetime = new Date(`${meetingDate}T${meetingTime}:00`).toISOString();
+          const scheduled_datetime = localDateTimeToUTC(meetingDate, meetingTime, user?.timezone);
           await api.post(`/meetings/`, {
             prospect: prospect.id,
             prospect_contact: selectedContactId || null,
@@ -805,11 +807,11 @@ const handleAddCustomRecipient = (e) => {
                       <div className="space-y-3">
                         <div>
                           <label className="block text-[10px] font-bold text-amber-700 uppercase mb-1">Issue Category</label>
-                          <input readOnly type="text" className="w-full p-2 border border-amber-200 rounded-lg text-sm bg-white text-amber-900 font-medium" value={autoIssueCategory} />
+                          <input readOnly type="text" className="w-full p-2 border border-amber-200 rounded-xl text-sm bg-white text-amber-900 font-medium" value={autoIssueCategory} />
                         </div>
                         <div>
                           <label className="block text-[10px] font-bold text-amber-700 uppercase mb-1">Details</label>
-                          <textarea readOnly className="w-full p-2 border border-amber-200 rounded-lg text-sm bg-white text-amber-900 font-medium" rows="3" value={autoDetails}></textarea>
+                          <textarea readOnly className="w-full p-2 border border-amber-200 rounded-xl text-sm bg-white text-amber-900 font-medium" rows="3" value={autoDetails}></textarea>
                         </div>
                       </div>
                     </div>
@@ -822,7 +824,7 @@ const handleAddCustomRecipient = (e) => {
                     <h3 className="font-bold text-slate-800 mb-4 pb-2 border-b border-slate-100">Verification Checklist</h3>
                     <div className="space-y-3">
                       {Object.entries(fieldNames).map(([key, label]) => (
-                        <div key={key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-slate-50 border border-slate-100 rounded-lg">
+                        <div key={key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-slate-50 border border-slate-100 rounded-xl">
                           <div className="flex-1 min-w-0 pr-4">
                             <div className="flex items-center gap-2 mb-1">
                               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{label}</label>
@@ -832,7 +834,7 @@ const handleAddCustomRecipient = (e) => {
                             </div>
                             <div className="text-sm font-medium text-slate-900 truncate" title={getFieldValue(key)}>{getFieldValue(key)}</div>
                           </div>
-                          <div className="flex bg-white rounded-lg border border-slate-200 overflow-hidden shrink-0 shadow-sm mt-2 sm:mt-0">
+                          <div className="flex bg-white rounded-xl border border-slate-200 overflow-hidden shrink-0 shadow-sm mt-2 sm:mt-0">
                             <button
                               type="button"
                               onClick={() => handleFieldToggle(key, 'Correct')}
@@ -1015,7 +1017,7 @@ const handleAddCustomRecipient = (e) => {
                         </div>
                         <div>
                           <label className="block font-extrabold text-slate-800 mb-1 uppercase tracking-wider text-[10px]">Email Message Content</label>
-                          <textarea rows={4} value={emailBody} onChange={(e) => setEmailBody(e.target.value)} disabled={isEmailSent} className="w-full p-3 bg-white border border-slate-200 rounded-t-xl text-xs font-medium text-slate-800 leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:bg-slate-100 disabled:text-slate-500" />
+                          <textarea rows={4} value={emailBody} onChange={(e) => setEmailBody(e.target.value)} disabled={isEmailSent} className="w-full p-3 bg-white border border-slate-200 rounded-t-xl text-xs font-medium text-slate-800 leading-relaxed focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-100 disabled:text-slate-500" />
                           {senderMailStatus && senderMailStatus.default_signature && (
                             <div className="w-full p-3 bg-slate-50 border border-t-0 border-slate-200 rounded-b-xl text-xs text-slate-500 whitespace-pre-wrap">
                               {senderMailStatus.default_signature}
@@ -1038,7 +1040,7 @@ const handleAddCustomRecipient = (e) => {
                             {attachments.length > 0 && (
                               <div className="flex flex-wrap gap-2 mt-2">
                                 {attachments.map((file, i) => (
-                                  <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 rounded-md border border-slate-200 text-[10px] font-semibold text-slate-700">
+                                  <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 rounded-xl border border-slate-200 text-[10px] font-semibold text-slate-700">
                                     <span className="truncate max-w-[120px]">{file.name}</span>
                                     <span className="text-slate-400">({(file.size / 1024 / 1024).toFixed(1)}MB)</span>
                                     <button type="button" onClick={() => removeAttachment(i)} className="text-red-500 hover:text-red-700 font-bold ml-1">×</button>
@@ -1135,7 +1137,7 @@ const handleAddCustomRecipient = (e) => {
                                     setCommunicationOutcome(latestCall.outcome || '');
                                   }
                                 }}
-                                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all cursor-pointer"
+                                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all cursor-pointer"
                               >
                                 <option value="">
                                   Company Official Number (General) {getGeneralLatestCall() ? ` - ${getGeneralLatestCall()}` : ''}
@@ -1154,7 +1156,7 @@ const handleAddCustomRecipient = (e) => {
                             {!inboundMode && (
                               <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
                                 <label className="text-xs font-bold text-slate-700 whitespace-nowrap">IVR Ext:</label>
-                                <input type="text" value={ivrExtension} onChange={(e) => setIvrExtension(e.target.value)} placeholder="e.g. Ext. 104" className="p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-extrabold text-slate-900 w-28 focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all" />
+                                <input type="text" value={ivrExtension} onChange={(e) => setIvrExtension(e.target.value)} placeholder="e.g. Ext. 104" className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-extrabold text-slate-900 w-28 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all" />
                               </div>
                             )}
                           </div>
@@ -1181,14 +1183,14 @@ const handleAddCustomRecipient = (e) => {
                                       value={generalCallSpokeTo} 
                                       onChange={(e) => setGeneralCallSpokeTo(e.target.value)} 
                                       placeholder="Name (e.g. John, Unknown)" 
-                                      className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all"
+                                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all"
                                     />
                                     <input 
                                       type="text" 
                                       value={generalCallDesignation} 
                                       onChange={(e) => setGeneralCallDesignation(e.target.value)} 
                                       placeholder="Designation (Optional)" 
-                                      className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all"
+                                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all"
                                     />
                                   </div>
                                 </div>
@@ -1201,11 +1203,11 @@ const handleAddCustomRecipient = (e) => {
                             <label className="block font-extrabold text-slate-700 mb-2.5 uppercase tracking-wider text-[10px]">1. Record Call Status Outcome</label>
                             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                               {[
-                                { label: 'Connected',      active: 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-sm ring-1 ring-emerald-500/20', idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
-                                { label: 'No Answer',      active: 'bg-amber-50 border-amber-500 text-amber-900 shadow-sm ring-1 ring-amber-500/20',   idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
-                                { label: 'Busy',           active: 'bg-orange-50 border-orange-500 text-orange-900 shadow-sm ring-1 ring-orange-500/20', idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
-                                { label: 'Switched Off',   active: 'bg-rose-50 border-rose-500 text-rose-900 shadow-sm ring-1 ring-rose-500/20',       idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
-                                { label: 'Invalid Number', active: 'bg-slate-100 border-slate-500 text-slate-900 shadow-sm ring-1 ring-slate-500/20',    idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
+                                { label: 'Connected',      active: 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-sm ring-1 ring-emerald-500/20', idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-200' },
+                                { label: 'No Answer',      active: 'bg-amber-50 border-amber-500 text-amber-900 shadow-sm ring-1 ring-amber-500/20',   idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-200' },
+                                { label: 'Busy',           active: 'bg-orange-50 border-orange-500 text-orange-900 shadow-sm ring-1 ring-orange-500/20', idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-200' },
+                                { label: 'Switched Off',   active: 'bg-rose-50 border-rose-500 text-rose-900 shadow-sm ring-1 ring-rose-500/20',       idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-200' },
+                                { label: 'Invalid Number', active: 'bg-slate-100 border-slate-500 text-slate-900 shadow-sm ring-1 ring-slate-500/20',    idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-200' },
                               ].map(({ label, active, idle }) => (
                                 <button
                                   key={label}
@@ -1234,7 +1236,7 @@ const handleAddCustomRecipient = (e) => {
                                       out === 'Not Interested' ? 'bg-rose-50 border-rose-500 text-rose-900 shadow-sm ring-1 ring-rose-500/20' :
                                       out === 'Lead Qualified' ? 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-sm ring-1 ring-emerald-500/20' :
                                       'bg-sky-50 border-sky-500 text-sky-900 shadow-sm ring-1 ring-sky-500/20'
-                                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+                                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-200'
                                   } ${isContactLockedCheck(selectedContactId) ? 'opacity-50 cursor-not-allowed hover:bg-transparent bg-slate-50' : ''}`}>
                                     <span>{out}</span>{communicationOutcome === out && <CheckCircle className={`w-4 h-4 ${out === 'Not Interested' ? 'text-rose-500' : out === 'Lead Qualified' ? 'text-emerald-500' : 'text-sky-500'}`} />}
                                   </button>
@@ -1248,13 +1250,13 @@ const handleAddCustomRecipient = (e) => {
                                 <span className="font-extrabold text-slate-800 flex items-center gap-1.5 text-xs">✉️ Prospect Requested Info Email</span>
                                 <div>
                                   <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Confirm Email Address:</label>
-                                  <input type="email" value={requestedEmailConfirm} onChange={(e) => setRequestedEmailConfirm(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all" placeholder="e.g. contact@company.com" />
+                                  <input type="email" value={requestedEmailConfirm} onChange={(e) => setRequestedEmailConfirm(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all" placeholder="e.g. contact@company.com" />
                                 </div>
                                 
                                 {requestedEmailConfirm && requestedEmailConfirm.trim() && (
                                   <>
                                     {duplicateRequestedEmailContact ? (
-                                      <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                                      <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2">
                                         <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                                         <div>
                                           <p className="text-[11px] font-extrabold text-amber-900">Email Already Exists</p>
@@ -1320,10 +1322,10 @@ const handleAddCustomRecipient = (e) => {
                               <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-4 shadow-sm">
                                 <span className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5">👤 Shared Another Contact Information</span>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                  <div><label className="block text-[10px] font-bold text-slate-700 mb-1.5">Name:</label><input type="text" value={sharedContactName} onChange={(e) => setSharedContactName(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all" /></div>
-                                  <div><label className="block text-[10px] font-bold text-slate-700 mb-1.5">Designation:</label><input type="text" value={sharedContactDesignation} onChange={(e) => setSharedContactDesignation(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all" /></div>
-                                  <div><label className="block text-[10px] font-bold text-slate-700 mb-1.5">Phone:</label><input type="text" value={sharedContactPhone} onChange={(e) => setSharedContactPhone(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all" /></div>
-                                  <div><label className="block text-[10px] font-bold text-slate-700 mb-1.5">Email:</label><input type="email" value={sharedContactEmail} onChange={(e) => setSharedContactEmail(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all" /></div>
+                                  <div><label className="block text-[10px] font-bold text-slate-700 mb-1.5">Name:</label><input type="text" value={sharedContactName} onChange={(e) => setSharedContactName(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all" /></div>
+                                  <div><label className="block text-[10px] font-bold text-slate-700 mb-1.5">Designation:</label><input type="text" value={sharedContactDesignation} onChange={(e) => setSharedContactDesignation(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all" /></div>
+                                  <div><label className="block text-[10px] font-bold text-slate-700 mb-1.5">Phone:</label><input type="text" value={sharedContactPhone} onChange={(e) => setSharedContactPhone(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all" /></div>
+                                  <div><label className="block text-[10px] font-bold text-slate-700 mb-1.5">Email:</label><input type="email" value={sharedContactEmail} onChange={(e) => setSharedContactEmail(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all" /></div>
                                 </div>
                                 {duplicateContact && (
                                   <div className="mt-2 p-2 bg-amber-100 border border-amber-300 rounded text-amber-900 text-xs flex flex-col sm:flex-row items-center justify-between gap-2">
@@ -1355,7 +1357,7 @@ const handleAddCustomRecipient = (e) => {
                                     value={notInterestedReason}
                                     onChange={(e) => setNotInterestedReason(e.target.value)}
                                     placeholder="e.g. Budget frozen, not the right time..."
-                                    className={`w-full p-2.5 bg-slate-50 border rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all ${notInterestedReason.trim() ? 'border-slate-300' : 'border-rose-300 ring-1 ring-rose-200'}`}
+                                    className={`w-full p-2.5 bg-slate-50 border rounded-lg text-xs font-semibold focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all ${notInterestedReason.trim() ? 'border-slate-200' : 'border-rose-300 ring-1 ring-rose-200'}`}
                                   />
                                 </div>
                                 <p className="text-[10px] text-slate-500 font-semibold flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5 text-rose-500" /> Prospect Status will be set to <strong className="text-slate-700">Lead Freeze</strong>. The Outreach button will be disabled.</p>
@@ -1367,7 +1369,7 @@ const handleAddCustomRecipient = (e) => {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   <div>
                                     <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Meeting Date *</label>
-                                    <input type="date" max="9999-12-31" required value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all" />
+                                    <input type="date" max="9999-12-31" required value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all" />
                                   </div>
                                   <div>
                                     <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Meeting Time *</label>
@@ -1376,14 +1378,14 @@ const handleAddCustomRecipient = (e) => {
                                 </div>
                                 <div>
                                   <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Meeting Link</label>
-                                  <input type="text" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all" />
+                                  <input type="text" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all" />
                                 </div>
                                 <div>
                                   <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Agenda *</label>
-                                  <textarea rows={2} value={leadQualifiedDescription} onChange={(e) => setLeadQualifiedDescription(e.target.value)} className={`w-full p-2.5 bg-slate-50 border rounded-lg text-xs font-semibold resize-none focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all ${leadQualifiedDescription.trim() ? 'border-slate-300' : 'border-rose-300 ring-1 ring-rose-200'}`} />
+                                  <textarea rows={2} value={leadQualifiedDescription} onChange={(e) => setLeadQualifiedDescription(e.target.value)} className={`w-full p-2.5 bg-slate-50 border rounded-lg text-xs font-semibold resize-none focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all ${leadQualifiedDescription.trim() ? 'border-slate-200' : 'border-rose-300 ring-1 ring-rose-200'}`} />
                                 </div>
                                 <div className="flex items-center gap-2 mt-2">
-                                  <input type="checkbox" id="attendedMeeting" checked={attendedMeeting} onChange={(e) => setAttendedMeeting(e.target.checked)} className="w-4 h-4 text-sky-600 rounded border-slate-300 focus:ring-sky-500" />
+                                  <input type="checkbox" id="attendedMeeting" checked={attendedMeeting} onChange={(e) => setAttendedMeeting(e.target.checked)} className="w-4 h-4 text-sky-600 rounded border-slate-200 focus:ring-sky-500" />
                                   <label htmlFor="attendedMeeting" className="text-[11px] font-bold text-slate-700 cursor-pointer">Prospect Attended Meeting</label>
                                 </div>
                               </div>
@@ -1396,7 +1398,7 @@ const handleAddCustomRecipient = (e) => {
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               <div>
                                 <label className="block text-[10px] font-bold text-slate-700 mb-1.5">Date Received *</label>
-                                <input type="date" value={inboundDate} onChange={(e) => setInboundDate(e.target.value)} className="w-full p-2.5 bg-white border border-emerald-300 rounded-lg text-xs font-semibold focus:outline-none" required />
+                                <input type="date" value={inboundDate} onChange={(e) => setInboundDate(e.target.value)} className="w-full p-2.5 bg-white border border-emerald-300 rounded-xl text-xs font-semibold focus:outline-none" required />
                               </div>
                               <div>
                                 <label className="block text-[10px] font-bold text-slate-700 mb-1.5">Time Received *</label>
@@ -1410,7 +1412,7 @@ const handleAddCustomRecipient = (e) => {
                         {(inboundMode || !['Requested Email', 'Call Back Later', 'Call Transferred', 'Shared Another Contact', 'Not Interested', 'Lead Qualified'].includes(communicationOutcome)) && (
                           <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-2 shadow-sm mt-4">
                             <label className="block font-extrabold text-slate-700 mb-1.5 text-[10px] uppercase tracking-wider">{inboundMode ? 'Inbound Message / Notes *' : 'Call Transcript & Discussion Summary'}</label>
-                            <textarea rows={3} value={callTranscriptNotes} onChange={(e) => setCallTranscriptNotes(e.target.value)} placeholder={inboundMode ? "Enter notes regarding the inbound message..." : "Enter notes from call conversation..."} className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all resize-none" />
+                            <textarea rows={3} value={callTranscriptNotes} onChange={(e) => setCallTranscriptNotes(e.target.value)} placeholder={inboundMode ? "Enter notes regarding the inbound message..." : "Enter notes from call conversation..."} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all resize-none" />
                           </div>
                         )}
                         <div className="flex flex-col gap-2 pt-1">

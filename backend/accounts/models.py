@@ -11,12 +11,21 @@ class UserProfile(models.Model):
     )
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='PRE')
+    timezone = models.CharField(max_length=64, default='UTC')
     mail_account = models.ForeignKey('MailAccount', on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_users')
 
     def __str__(self):
         return f"{self.user.username} - {self.get_role_display()}"
 
+@receiver(post_save, sender=User)
+def create_user_profile(sender, instance, created, **kwargs):
+    if created:
+        UserProfile.objects.create(user=instance)
 
+@receiver(post_save, sender=User)
+def save_user_profile(sender, instance, **kwargs):
+    if hasattr(instance, 'profile'):
+        instance.profile.save()
 
 class MailAccount(models.Model):
     name = models.CharField(max_length=255, unique=True, help_text="e.g. Sales General Inbox")

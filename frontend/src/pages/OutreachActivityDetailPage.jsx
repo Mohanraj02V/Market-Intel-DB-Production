@@ -48,7 +48,7 @@ const OutreachActivityDetailPage = () => {
   });
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <Link to="/lq-pipeline" className="flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-indigo-600 transition">
           <ArrowLeft className="w-4 h-4" /> Back to Dashboard
@@ -117,12 +117,12 @@ const OutreachActivityDetailPage = () => {
                                   <span className="text-[10px] font-semibold">{new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                 </div>
                               </div>
-                              <span className="text-[10px] font-bold bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg text-slate-600 shadow-sm">
+                              <span className="text-[10px] font-bold bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-xl text-slate-600 shadow-sm">
                                 Performed by: {log.performed_by_name || log.created_by_name}
                               </span>
                             </div>
                             {log.notes && (
-                              <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                              <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
                                 <p className="text-slate-700 font-medium whitespace-pre-line leading-relaxed">{log.notes}</p>
                               </div>
                             )}

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchMailAccounts, saveMailAccount, testSmtp, testImap, clearError, setDefaultAccount } from '../features/outreach/outreachSlice';
 import { toast } from 'react-toastify';
+import SearchableSelect from '../components/common/SearchableSelect';
 
 const emptyForm = {
     email_address: '',
@@ -109,7 +110,7 @@ const MailSettingsPage = () => {
     if (status === 'loading' && mailAccounts.length === 0) return <div className="p-6">Loading settings...</div>;
     
     return (
-        <div className="p-6 max-w-5xl mx-auto flex flex-col md:flex-row gap-6">
+        <div className="flex flex-col md:flex-row gap-6">
             {/* Sidebar for list of accounts */}
             <div className="md:w-1/3 bg-white p-4 rounded shadow h-fit">
                 <div className="flex justify-between items-center mb-4">
