@@ -2,14 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, Search, Plus, MapPin, Eye, Edit2, Trash2 } from 'lucide-react';
-import { fetchMarketEvents, deleteMarketEvent, setSearch } from '../features/marketEvents/marketEventSlice';
+import { fetchMarketEvents, deleteMarketEvent, setSearch, setPage } from '../features/marketEvents/marketEventSlice';
 import MarketEventForm from '../components/marketEvents/MarketEventForm';
+import Pagination from '../components/layout/Pagination';
 
 const MarketEventsPage = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  const { items: events, loading, error, search } = useSelector((state) => state.marketEvents);
+  const { items: events, loading, error, search, page, count } = useSelector((state) => state.marketEvents);
   const { user } = useSelector((state) => state.auth);
 
   // PRE users (and superusers) can create, edit, and delete events.
@@ -20,8 +21,8 @@ const MarketEventsPage = () => {
   const [editingEvent, setEditingEvent] = useState(null);
 
   useEffect(() => {
-    dispatch(fetchMarketEvents({ search }));
-  }, [dispatch, search]);
+    dispatch(fetchMarketEvents({ search, page }));
+  }, [dispatch, search, page]);
 
   const handleSearch = (e) => {
     dispatch(setSearch(e.target.value));
@@ -57,7 +58,7 @@ const MarketEventsPage = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8">
+    <div className="space-y-8">
       {/* Header section */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
@@ -199,6 +200,12 @@ const MarketEventsPage = () => {
             </tbody>
           </table>
         </div>
+        <Pagination 
+          currentPage={page} 
+          totalCount={count || 0} 
+          pageSize={50} 
+          onPageChange={(newPage) => dispatch(setPage(newPage))} 
+        />
       </div>
 
       {/* Form modal — only rendered for PRE/superuser */}

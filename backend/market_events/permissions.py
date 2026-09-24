@@ -25,8 +25,8 @@ class MarketEventPermission(BasePermission):
         role = getattr(getattr(request.user, 'profile', None), 'role', None)
 
         if request.method in SAFE_METHODS:
-            # PRE and LQ can read
-            return role in ('PRE', 'LQ')
+            # PRE, LQ, and MANAGER can read
+            return role in ('PRE', 'LQ', 'MANAGER')
 
-        # Only PRE can mutate
+        # Only PRE can mutate; LQ and MANAGER cannot
         return role == 'PRE'

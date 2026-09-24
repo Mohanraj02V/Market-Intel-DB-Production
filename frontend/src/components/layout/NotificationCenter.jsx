@@ -59,6 +59,16 @@ export default function NotificationCenter() {
       setReminders(cbData);
       setMeetings(mData);
       checkNotifications(cbData, mData);
+      
+      if (userRef.current?.role === 'MANAGER') {
+        const auditRes = await api.get('/audit-reverifications/');
+        const audits = auditRes.data;
+        audits.forEach(audit => {
+          if (audit.status === 'CORRECTED' && !audit.manager_notified) {
+            triggerAuditToast(audit);
+          }
+        });
+      }
     } catch (err) {
       // Non-fatal; retain existing reminder state
     }
@@ -111,6 +121,25 @@ export default function NotificationCenter() {
     } catch (err) {
       // Non-fatal; notification already shown
     }
+    setTimeout(() => removeToast(newToast.id), 10000);
+  };
+
+  const triggerAuditToast = async (audit) => {
+    const newToast = {
+      id: `audit-${audit.id}`,
+      type: 'audit',
+      item: audit,
+      message: `PRE User ${audit.pre_user_name || 'Unknown'} corrected fields for ${audit.prospect_company_name}.`,
+      time: new Date().toLocaleTimeString(),
+    };
+    // Ensure we don't duplicate active toasts
+    setActiveToasts((prev) => {
+      if (prev.find(t => t.id === newToast.id)) return prev;
+      return [...prev, newToast];
+    });
+    try {
+      await api.post(`/audit-reverifications/${audit.id}/mark-notified/`);
+    } catch (err) {}
     setTimeout(() => removeToast(newToast.id), 10000);
   };
 

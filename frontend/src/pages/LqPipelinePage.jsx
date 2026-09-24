@@ -8,22 +8,48 @@ import {
 import { 
   fetchLqPipeline, 
   updateVerification, 
-  confirmReverification 
+  confirmReverification,
+  reportIssueToPre,
+  setPage
 } from '../features/lqPipeline/lqPipelineSlice';
 import { Link, useNavigate } from 'react-router-dom';
 import LqWorkspaceModal from '../components/lq/LqWorkspaceModal';
+import Pagination from '../components/layout/Pagination';
 import api from '../services/api';
 
 const LqPipelinePage = ({ filter = 'all' }) => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { items, loading } = useSelector((state) => state.lqPipeline);
+  const { items, loading, page, count } = useSelector((state) => state.lqPipeline);
+  const { user } = useSelector((state) => state.auth);
+  const isManager = user?.role === 'MANAGER';
   
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => {
+    const userId = user?.id || 'default';
+    return sessionStorage.getItem(`lqPipelineSearch_${userId}`) || '';
+  });
   
+  useEffect(() => {
+    const userId = user?.id || 'default';
+    sessionStorage.setItem(`lqPipelineSearch_${userId}`, searchTerm);
+  }, [searchTerm, user]);
+
   const [globalLogs, setGlobalLogs] = useState([]);
-  const [endDate, setEndDate] = useState('');
-  const [startDate, setStartDate] = useState('');
+  const [startDate, setStartDate] = useState(() => {
+    const userId = user?.id || 'default';
+    return sessionStorage.getItem(`lqPipelineStartDate_${userId}`) || '';
+  });
+  
+  const [endDate, setEndDate] = useState(() => {
+    const userId = user?.id || 'default';
+    return sessionStorage.getItem(`lqPipelineEndDate_${userId}`) || '';
+  });
+
+  useEffect(() => {
+    const userId = user?.id || 'default';
+    sessionStorage.setItem(`lqPipelineStartDate_${userId}`, startDate);
+    sessionStorage.setItem(`lqPipelineEndDate_${userId}`, endDate);
+  }, [startDate, endDate, user]);
   
   const [selectedLq, setSelectedLq] = useState(null);
   const [showWorkspace, setShowWorkspace] = useState(false);
@@ -39,11 +65,11 @@ const LqPipelinePage = ({ filter = 'all' }) => {
   });
 
   useEffect(() => {
-    dispatch(fetchLqPipeline());
+    dispatch(fetchLqPipeline({ page }));
     api.get('/outreach/communications/')
        .then(res => setGlobalLogs(res.data.results || res.data))
        .catch(err => console.error('Failed to load global communications', err));
-  }, [dispatch]);
+  }, [dispatch, page]);
 
   const sortedGlobalLogs = [...globalLogs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   
@@ -124,19 +150,32 @@ const LqPipelinePage = ({ filter = 'all' }) => {
   const emailsSentTodayCount = todayLogs.filter(log => log.activity_type === 'EMAIL_SENT').length;
   const callsLoggedTodayCount = todayLogs.filter(log => log.activity_type === 'CALL' || log.activity_type === 'CALL_MADE').length;
 
-  const openWorkspace = (lq) => {
+  const [forcedWorkspaceTab, setForcedWorkspaceTab] = useState(null);
+  const [correctedFields, setCorrectedFields] = useState([]);
+
+  const openWorkspace = (lq, forceTab = null) => {
     setSelectedLq(lq);
+    setForcedWorkspaceTab(forceTab);
     const savedChecklist = lq.verification_checklist || {};
-    setVerificationFields({
-      companyName: savedChecklist.companyName || 'Correct',
-      country: savedChecklist.country || 'Correct',
-      address: savedChecklist.address || 'Correct',
-      website: savedChecklist.website || 'Correct',
-      linkedIn: savedChecklist.linkedIn || 'Correct',
-      email: savedChecklist.email || 'Correct',
-      contactNo: savedChecklist.contactNo || 'Correct',
-      productService: savedChecklist.productService || 'Correct'
+    const isConfirming = lq.pre_task_status === 'PRE_UPDATED';
+    
+    // Find previously incorrect fields to highlight them
+    const previouslyIncorrect = Object.keys(savedChecklist).filter(k => savedChecklist[k] === 'Incorrect');
+    setCorrectedFields(isConfirming ? previouslyIncorrect : []);
+    
+    const allFieldNames = [
+      'companyName', 'country', 'address', 'website', 'linkedIn', 'email', 'contactNo', 
+      'productService', 'primaryIndustries', 'companyStructure', 'operationalStatus', 
+      'marketEvents', 'keyContacts', 'products', 'services', 'solutions'
+    ];
+    
+    const newFields = {};
+    allFieldNames.forEach(key => {
+      // Initialize with saved state. Previously incorrect fields will remain incorrect until manually verified by LQ
+      newFields[key] = savedChecklist[key] || 'Correct';
     });
+    
+    setVerificationFields(newFields);
     setShowWorkspace(true);
   };
 
@@ -173,7 +212,15 @@ const LqPipelinePage = ({ filter = 'all' }) => {
     linkedIn: 'LinkedIn Page',
     email: 'Official Email',
     contactNo: 'Contact No.',
-    productService: 'Product, Service & Solution'
+    productService: 'Product, Service & Solution',
+    primaryIndustries: 'Primary Industries',
+    companyStructure: 'Company Structure',
+    operationalStatus: 'Operational Status',
+    marketEvents: 'Market Events',
+    keyContacts: 'Key Contacts',
+    products: 'Products',
+    services: 'Services',
+    solutions: 'Solutions'
   };
 
   const incorrectNames = incorrectFields.map(key => fieldNames[key]);
@@ -192,21 +239,23 @@ const LqPipelinePage = ({ filter = 'all' }) => {
     setShowWorkspace(false);
   };
 
-  const handleReadyForOutreach = () => {
+  const handleReadyForOutreach = (stayOpen = false) => {
     dispatch(updateVerification({ 
       id: selectedLq.id, 
       verification_status: 'Verified',
       verification_checklist: verificationFields 
-    }));
-    setShowWorkspace(false);
+    })).then((action) => {
+       if (action.payload && stayOpen) {
+         setSelectedLq(action.payload);
+       }
+    });
+    if (!stayOpen) {
+      setShowWorkspace(false);
+    }
   };
 
   const handleConfirmReverify = (item) => {
-    dispatch(confirmReverification(item.id)).then((action) => {
-      if (action.payload) {
-        openWorkspace(action.payload);
-      }
-    });
+    openWorkspace(item, 'verification');
   };
 
   return (
@@ -214,127 +263,129 @@ const LqPipelinePage = ({ filter = 'all' }) => {
       {/* Header */}
       <div className="bg-slate-900 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden shadow-sm">
         <div className="relative z-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-900/30 border border-emerald-700/50 text-emerald-400 text-xs font-bold uppercase tracking-wider mb-3">
-            <CheckCircle2 className="w-3.5 h-3.5" /> LQ Module: PRE Master Data Connected
-          </div>
+
           <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight mb-2">Lead Verification & Outreach Workspace</h1>
           <p className="text-slate-400 text-sm max-w-2xl">Review and verify prospect master data, qualify opportunities, and continue the lead qualification workflow.</p>
         </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">LQ Pipeline Prospects</span>
-            <Building2 className="w-4 h-4 text-slate-400" />
+      {!isManager && (
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500">LQ Pipeline Prospects</span>
+              <Building2 className="w-4 h-4 text-slate-400" />
+            </div>
+            <p className="text-2xl font-black text-slate-900 mt-1">{pipelineCount}</p>
           </div>
-          <p className="text-2xl font-black text-slate-900 mt-1">{pipelineCount}</p>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-amber-200 bg-amber-50/30 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-amber-900">Issues Sent to PRE</span>
-            <AlertTriangle className="w-4 h-4 text-amber-600" />
+          <div className="bg-white p-4 rounded-xl border border-amber-200 bg-amber-50/30 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-amber-900">Issues Sent to PRE</span>
+              <AlertTriangle className="w-4 h-4 text-amber-600" />
+            </div>
+            <p className="text-2xl font-black text-amber-900 mt-1">{preIssuesCount}</p>
           </div>
-          <p className="text-2xl font-black text-amber-900 mt-1">{preIssuesCount}</p>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-emerald-200 bg-emerald-50/30 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-emerald-700">Outreached</span>
-            <CheckCircle className="w-4 h-4 text-emerald-600" />
+          <div className="bg-white p-4 rounded-xl border border-emerald-200 bg-emerald-50/30 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-emerald-700">Outreached</span>
+              <CheckCircle className="w-4 h-4 text-emerald-600" />
+            </div>
+            <p className="text-2xl font-black text-emerald-700 mt-1">{verifiedCount}</p>
           </div>
-          <p className="text-2xl font-black text-emerald-700 mt-1">{verifiedCount}</p>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-indigo-200 bg-indigo-50/30 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-indigo-800">Calls Logged (Today)</span>
-            <Phone className="w-4 h-4 text-indigo-600" />
+          <div className="bg-white p-4 rounded-xl border border-indigo-200 bg-indigo-50/30 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-indigo-800">Calls Logged (Today)</span>
+              <Phone className="w-4 h-4 text-indigo-600" />
+            </div>
+            <p className="text-2xl font-black text-indigo-800 mt-1">{callsLoggedTodayCount}</p>
           </div>
-          <p className="text-2xl font-black text-indigo-800 mt-1">{callsLoggedTodayCount}</p>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-sky-200 bg-sky-50/30 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-sky-800">Emails Sent (Today)</span>
-            <Mail className="w-4 h-4 text-sky-600" />
+          <div className="bg-white p-4 rounded-xl border border-sky-200 bg-sky-50/30 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-sky-800">Emails Sent (Today)</span>
+              <Mail className="w-4 h-4 text-sky-600" />
+            </div>
+            <p className="text-2xl font-black text-sky-800 mt-1">{emailsSentTodayCount}</p>
           </div>
-          <p className="text-2xl font-black text-sky-800 mt-1">{emailsSentTodayCount}</p>
         </div>
-      </div>
+      )}
 
       {/* Global Activity Dashboard */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden p-6">
-        <div className="flex items-center gap-4 mb-4">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
-            <Activity className="w-5 h-5 text-indigo-600" />
+      {!isManager && (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden p-6">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+              <Activity className="w-5 h-5 text-indigo-600" />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-lg font-black text-slate-800">Global Activity Dashboard</h2>
+              <p className="text-xs font-semibold text-slate-500">Track outreach history across all prospects by date range.</p>
+            </div>
+            <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg shadow-sm px-1.5 py-1">
+              <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider pl-1.5 pr-1">Date Range:</label>
+              <input 
+                type="date" 
+                value={startDate}
+                max={new Date().toISOString().split('T')[0]}
+                onChange={(e) => {
+                  setStartDate(e.target.value);
+                  setEndDate('');
+                }}
+                className="px-2 py-1 bg-slate-50 rounded text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-slate-700"
+              />
+              <span className="text-slate-400 font-bold text-xs px-1">to</span>
+              <input 
+                type="date" 
+                max="9999-12-31"
+                min={startDate || undefined}
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                disabled={!startDate}
+                className="px-2 py-1 bg-slate-50 rounded text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-slate-700 disabled:opacity-50"
+              />
+            </div>
           </div>
-          <div className="flex-1">
-            <h2 className="text-lg font-black text-slate-800">Global Activity Dashboard</h2>
-            <p className="text-xs font-semibold text-slate-500">Track outreach history across all prospects by date range.</p>
-          </div>
-          <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg shadow-sm px-1.5 py-1">
-            <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider pl-1.5 pr-1">Date Range:</label>
-            <input 
-              type="date" 
-              value={startDate}
-              max={new Date().toISOString().split('T')[0]}
-              onChange={(e) => {
-                setStartDate(e.target.value);
-                setEndDate('');
-              }}
-              className="px-2 py-1 bg-slate-50 rounded text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-slate-700"
-            />
-            <span className="text-slate-400 font-bold text-xs px-1">to</span>
-            <input 
-              type="date" 
-              max="9999-12-31"
-              min={startDate || undefined}
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              disabled={!startDate}
-              className="px-2 py-1 bg-slate-50 rounded text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-slate-700 disabled:opacity-50"
-            />
-          </div>
-        </div>
 
-        {startDate && endDate ? (
-          <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
-            {groupedDashboardProspects.length > 0 ? (
-              groupedDashboardProspects.map(group => {
-                return (
-                  <div 
-                    key={group.prospectId} 
-                    className="bg-slate-50 border border-slate-200 rounded-lg overflow-hidden transition-all duration-200 shadow-sm px-4 py-2.5 flex items-center justify-between cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-100 group"
-                    onClick={() => navigate(`/outreach-activity/${group.prospectId}`)}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div>
-                        <h4 className="font-extrabold text-slate-900 text-sm group-hover:text-indigo-700 transition-colors">{group.companyName}</h4>
-                        <p className="text-[10px] font-semibold text-slate-500 mt-0.5">
-                          {Object.entries(group.breakdown).map(([type, count]) => `${count} ${type.replace('_MADE', '').replace('_SENT', '')}`).join(' • ')}
-                        </p>
+          {startDate && endDate ? (
+            <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+              {groupedDashboardProspects.length > 0 ? (
+                groupedDashboardProspects.map(group => {
+                  return (
+                    <div 
+                      key={group.prospectId} 
+                      className="bg-slate-50 border border-slate-200 rounded-lg overflow-hidden transition-all duration-200 shadow-sm px-4 py-2.5 flex items-center justify-between cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-100 group"
+                      onClick={() => navigate(`/outreach-activity/${group.prospectId}`)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div>
+                          <h4 className="font-extrabold text-slate-900 text-sm group-hover:text-indigo-700 transition-colors">{group.companyName}</h4>
+                          <p className="text-[10px] font-semibold text-slate-500 mt-0.5">
+                            {Object.entries(group.breakdown).map(([type, count]) => `${count} ${type.replace('_MADE', '').replace('_SENT', '')}`).join(' • ')}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-bold text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity">View Timeline &rarr;</span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-bold text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity">View Timeline &rarr;</span>
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-                <p className="text-sm font-semibold text-slate-500">No activities recorded on Day {dashboardDay}.</p>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="p-8 text-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-            <Activity className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-            <p className="text-sm font-semibold text-slate-500">
-              {startDate ? "Enter a Cadence Day number above to view activities for that day." : "Select a Start Date first to calculate Campaign Days."}
-            </p>
-          </div>
-        )}
-      </div>
+                  );
+                })
+              ) : (
+                <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                  <p className="text-sm font-semibold text-slate-500">No activities recorded in this date range.</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="p-8 text-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+              <Activity className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm font-semibold text-slate-500">
+                Please select both a Start Date and an End Date to view activities.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Table Container */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
@@ -362,7 +413,7 @@ const LqPipelinePage = ({ filter = 'all' }) => {
                 <th className="p-3.5">Master Prospect & PRE Data</th>
                 <th className="p-3.5">PRE Task Status</th>
                 <th className="p-3.5">Verification Status</th>
-                <th className="p-3.5 text-right">Actions</th>
+                {!isManager && <th className="p-3.5 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -419,51 +470,59 @@ const LqPipelinePage = ({ filter = 'all' }) => {
                         {item.verification_status}
                       </span>
                     </td>
-                    <td className="p-3.5 text-right">
-                      {isUpdated ? (
-                        <button
-                          onClick={() => handleConfirmReverify(item)}
-                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold transition flex items-center gap-1 ml-auto"
-                        >
-                          <CheckCircle className="w-3 h-3" /> Confirm Fixes
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => openWorkspace(item)}
-                          disabled={isLeadFreeze}
-                          title={isLeadFreeze ? 'Outreach disabled — Prospect is Lead Freeze' : ''}
-                          className={`px-3 py-1.5 rounded text-[11px] font-bold transition flex items-center gap-1 ml-auto ${
-                            isLeadFreeze ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 
-                            isIssue ? 'bg-amber-600 hover:bg-amber-700 text-white' :
-                            item.verification_status === 'Verified' ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 
-                            'bg-slate-800 hover:bg-slate-900 text-white'
-                          }`}
-                        >
-                          {isLeadFreeze ? (
-                            <><XCircle className="w-3 h-3 text-red-500" /><span className="text-red-500">Lead Freeze</span></>
-                          ) : isLeadQualified ? (
-                            <><CheckCircle className="w-4 h-4 text-emerald-500" /> <span className="text-emerald-500">Lead Qualified</span></>
-                          ) : item.verification_status === 'Verified' ? (
-                            <><Phone className="w-3 h-3" /> Outreach</>
-                          ) : (
-                            <><FileEdit className="w-3 h-3" /> Verify</>
-                          )}
-                        </button>
-                      )}
-                    </td>
+                    {!isManager && (
+                      <td className="p-3.5 text-right">
+                        {isUpdated ? (
+                          <button
+                            onClick={() => handleConfirmReverify(item)}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold transition flex items-center gap-1 ml-auto"
+                          >
+                            <CheckCircle className="w-3 h-3" /> Confirm Fixes
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => openWorkspace(item)}
+                            disabled={isLeadFreeze}
+                            title={isLeadFreeze ? 'Outreach disabled — Prospect is Lead Freeze' : ''}
+                            className={`px-3 py-1.5 rounded text-[11px] font-bold transition flex items-center gap-1 ml-auto ${
+                              isLeadFreeze ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 
+                              isIssue ? 'bg-amber-600 hover:bg-amber-700 text-white' :
+                              item.verification_status === 'Verified' ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 
+                              'bg-slate-800 hover:bg-slate-900 text-white'
+                            }`}
+                          >
+                            {isLeadFreeze ? (
+                              <><XCircle className="w-3 h-3 text-red-500" /><span className="text-red-500">Lead Freeze</span></>
+                            ) : isLeadQualified ? (
+                              <><CheckCircle className="w-4 h-4 text-emerald-500" /> <span className="text-emerald-500">Lead Qualified</span></>
+                            ) : item.verification_status === 'Verified' ? (
+                              <><Phone className="w-3 h-3" /> Outreach</>
+                            ) : (
+                              <><FileEdit className="w-3 h-3" /> Verify</>
+                            )}
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
+        <Pagination 
+          currentPage={page} 
+          totalCount={count} 
+          pageSize={50} 
+          onPageChange={(newPage) => dispatch(setPage(newPage))} 
+        />
       </div>
 
       {/* Workspace Modal */}
       {showWorkspace && selectedLq && (
         <LqWorkspaceModal
           selectedLq={selectedLq}
-          initialTab={selectedLq.verification_status === 'Verified' ? 'outreach' : 'verification'}
+          initialTab={forcedWorkspaceTab || (selectedLq.verification_status === 'Verified' ? 'outreach' : 'verification')}
           onClose={() => { setShowWorkspace(false); dispatch(fetchLqPipeline()); }}
           hasIncorrect={hasIncorrect}
           allCorrect={allCorrect}
@@ -471,6 +530,8 @@ const LqPipelinePage = ({ filter = 'all' }) => {
           handleFieldToggle={handleFieldToggle}
           handleSubmitIssue={handleSubmitIssue}
           handleReadyForOutreach={handleReadyForOutreach}
+          isConfirmingFixes={selectedLq.pre_task_status === 'PRE_UPDATED'}
+          correctedFields={correctedFields}
         />
       )}
     </div>

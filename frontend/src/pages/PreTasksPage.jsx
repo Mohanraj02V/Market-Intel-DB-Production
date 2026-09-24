@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchLqPipeline, completePreTask } from '../features/lqPipeline/lqPipelineSlice';
 import ProspectForm from '../components/prospects/ProspectForm';
@@ -7,6 +7,8 @@ import { AlertTriangle, CheckCircle, FileEdit, Building2 } from 'lucide-react';
 const PreTasksPage = () => {
   const dispatch = useDispatch();
   const { items, loading } = useSelector((state) => state.lqPipeline);
+  const { user } = useSelector((state) => state.auth);
+  const isManager = user?.role === 'MANAGER';
   
   const [editingProspect, setEditingProspect] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -14,12 +16,45 @@ const PreTasksPage = () => {
   const [highlightFields, setHighlightFields] = useState([]);
   const [activeTaskId, setActiveTaskId] = useState(null);
 
-  useEffect(() => {
-    dispatch(fetchLqPipeline({ pre_task_status: 'ISSUE_SENT_TO_PRE' }));
-  }, [dispatch]);
+  const [activeTab, setActiveTab] = useState('PENDING');
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [managerUserFilter, setManagerUserFilter] = useState('ALL');
 
-  // Filter just in case the API didn't filter properly
-  const tasks = items.filter(item => item.pre_task_status === 'ISSUE_SENT_TO_PRE');
+  useEffect(() => {
+    if (activeTab === 'PENDING') {
+      dispatch(fetchLqPipeline({ pre_task_status: 'ISSUE_SENT_TO_PRE' }));
+    } else {
+      // Fetch all tasks for the user so we can see historically completed tasks
+      dispatch(fetchLqPipeline({}));
+    }
+  }, [dispatch, activeTab]);
+
+  // Filter tasks locally based on tab and date
+  const tasks = items.filter(item => {
+    if (activeTab === 'PENDING') return item.pre_task_status === 'ISSUE_SENT_TO_PRE';
+    if (activeTab === 'COMPLETED') {
+      // Consider completed if it's not currently pending an issue
+      if (item.pre_task_status === 'ISSUE_SENT_TO_PRE') return false;
+      
+      // If there's no updated_at, we can still fall back to created_at
+      const dateToUse = item.updated_at || item.created_at;
+      if (!dateToUse) return false;
+      const itemDate = new Date(dateToUse).toISOString().split('T')[0];
+      
+      let inRange = true;
+      if (startDate) inRange = inRange && itemDate >= startDate;
+      if (endDate) inRange = inRange && itemDate <= endDate;
+      return inRange;
+    }
+    return false;
+  });
+
+  const availableUsers = Array.from(new Set(tasks.map(t => t.prospect?.created_by))).filter(Boolean);
+  
+  const filteredTasks = isManager && managerUserFilter !== 'ALL'
+    ? tasks.filter(t => t.prospect?.created_by === managerUserFilter)
+    : tasks;
 
   const handleOpenProspect = (task) => {
     setEditingProspect(task.prospect);
@@ -38,10 +73,20 @@ const PreTasksPage = () => {
       linkedIn: 'linkedin_company_page',
       email: 'official_email_address',
       contactNo: 'official_phone_number',
-      productService: 'primary_offering_type' // Or products/services/solutions
+      productService: 'primary_offering_type',
+      primaryIndustries: 'primary_industries',
+      companyStructure: 'company_structure',
+      operationalStatus: 'operational_status',
+      marketEvents: 'market_event_ids',
+      keyContacts: 'key_contacts',
+      products: 'products',
+      services: 'services',
+      solutions: 'solutions',
+      parent_companies_detail: 'parent_companies',
+      market_events: 'market_event_ids'
     };
     
-    const mappedFields = incorrects.map(k => mapToFormKeys[k]).filter(Boolean);
+    const mappedFields = incorrects.map(k => mapToFormKeys[k] || k).filter(Boolean);
     setHighlightFields(mappedFields);
     
     setHasEdited(false); // Reset to false until they actually submit the form
@@ -57,14 +102,67 @@ const PreTasksPage = () => {
 
   return (
     <div className="space-y-6">
-      <div className="bg-amber-50 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 border border-amber-200 shadow-sm">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-bold uppercase tracking-wider mb-3">
-            <AlertTriangle className="w-3.5 h-3.5" /> PRE Task Dashboard
+
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+        {!isManager ? (
+          <div className="flex bg-slate-100 p-1 rounded-lg">
+            <button
+              onClick={() => setActiveTab('PENDING')}
+              className={`px-4 py-2 rounded-md text-sm font-bold transition ${activeTab === 'PENDING' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+            >
+              Pending Tasks
+            </button>
+            <button
+              onClick={() => setActiveTab('COMPLETED')}
+              className={`px-4 py-2 rounded-md text-sm font-bold transition ${activeTab === 'COMPLETED' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+            >
+              Completed Tasks
+            </button>
           </div>
-          <h1 className="text-2xl md:text-3xl font-black text-amber-900 tracking-tight mb-2">Corrections & Master Data Fixes</h1>
-          <p className="text-amber-700 text-sm max-w-2xl">Review and fix master data issues reported by the Lead Qualifiers.</p>
-        </div>
+        ) : (
+          <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider">Pending PRE Tasks</h2>
+        )}
+        
+        {activeTab === 'COMPLETED' && (
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">From:</label>
+              <input
+                type="date"
+                className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-2 font-medium"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                max={new Date().toISOString().split('T')[0]}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">To:</label>
+              <input
+                type="date"
+                className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-2 font-medium"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                max={new Date().toISOString().split('T')[0]}
+              />
+            </div>
+          </div>
+        )}
+
+        {isManager && availableUsers.length > 0 && (
+          <div className="flex items-center gap-2 ml-auto">
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Assigned PRE:</label>
+            <select
+              className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-2 font-medium"
+              value={managerUserFilter}
+              onChange={(e) => setManagerUserFilter(e.target.value)}
+            >
+              <option value="ALL">All Users</option>
+              {availableUsers.map(u => (
+                <option key={u} value={u}>{u}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
@@ -74,22 +172,23 @@ const PreTasksPage = () => {
               <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
                 <th className="p-4">Reported Prospect</th>
                 <th className="p-4">Issue Details</th>
+                {isManager && <th className="p-4">Assignment Info</th>}
                 <th className="p-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan="3" className="p-8 text-center text-slate-500">Loading tasks...</td>
+                  <td colSpan={isManager ? 4 : 3} className="p-8 text-center text-slate-500">Loading tasks...</td>
                 </tr>
-              ) : tasks.length === 0 ? (
+              ) : filteredTasks.length === 0 ? (
                 <tr>
-                  <td colSpan="3" className="p-8 text-center text-slate-500">
+                  <td colSpan={isManager ? 4 : 3} className="p-8 text-center text-slate-500">
                     <CheckCircle className="w-8 h-8 mx-auto text-emerald-400 mb-2" />
-                    No pending correction tasks!
+                    {activeTab === 'PENDING' ? 'No pending correction tasks!' : 'No completed tasks found for this date range.'}
                   </td>
                 </tr>
-              ) : tasks.map(task => (
+              ) : filteredTasks.map(task => (
                 <tr key={task.id} className="hover:bg-slate-50 transition">
                   <td className="p-4 align-top">
                     <div className="flex items-start gap-3">
@@ -105,28 +204,48 @@ const PreTasksPage = () => {
                     </div>
                   </td>
                   <td className="p-4 align-top max-w-md">
-                    <div className="bg-red-50 p-3 rounded-lg border border-red-100 text-red-900">
-                      <span className="font-bold block mb-1 text-red-700">Category: {task.issue_category}</span>
+                    <div className={`p-3 rounded-lg border ${activeTab === 'COMPLETED' ? 'bg-emerald-50 border-emerald-100 text-emerald-900' : 'bg-red-50 border-red-100 text-red-900'}`}>
+                      <span className={`font-bold block mb-1 ${activeTab === 'COMPLETED' ? 'text-emerald-700' : 'text-red-700'}`}>Category: {task.issue_category}</span>
                       <p className="whitespace-pre-wrap font-mono text-[10px]">{task.issue_details}</p>
                     </div>
                   </td>
+                  {isManager && (
+                    <td className="p-4 align-top">
+                      <div className="flex flex-col gap-2">
+                        <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-indigo-50 border border-indigo-100 w-max">
+                          <span className="text-[10px] font-bold text-indigo-700 uppercase">Assigned PRE:</span>
+                          <span className="text-xs font-bold text-slate-800">{task.prospect.created_by || 'Unknown'}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-medium">
+                          Assigned on: {task.issue_reported_at ? new Date(task.issue_reported_at).toLocaleDateString() : 'N/A'}
+                        </div>
+                      </div>
+                    </td>
+                  )}
                   <td className="p-4 align-top text-right">
                     <div className="flex flex-col gap-2 items-end">
                       <button
                         onClick={() => handleOpenProspect(task)}
                         className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
                       >
-                        <FileEdit className="w-3.5 h-3.5" /> Open Prospect
+                        <FileEdit className="w-3.5 h-3.5" /> {isManager ? 'View Prospect' : 'Open Prospect'}
                       </button>
-                      <button
-                        onClick={() => handleCompleteTask(task.id)}
-                        disabled={!hasEdited || activeTaskId !== task.id}
-                        className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-sm ${
-                          (hasEdited && activeTaskId === task.id) ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                        }`}
-                      >
-                        <CheckCircle className="w-3.5 h-3.5" /> Complete Correction Task
-                      </button>
+                      {!isManager && activeTab === 'PENDING' && (
+                        <button
+                          onClick={() => handleCompleteTask(task.id)}
+                          disabled={!hasEdited || activeTaskId !== task.id}
+                          className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-sm ${
+                            (hasEdited && activeTaskId === task.id) ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                          }`}
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" /> Complete Correction Task
+                        </button>
+                      )}
+                      {!isManager && activeTab === 'COMPLETED' && (
+                        <div className="px-4 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold border border-emerald-200 flex items-center gap-1.5 w-max justify-center shadow-sm">
+                          <CheckCircle className="w-3.5 h-3.5" /> Completed
+                        </div>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -144,6 +263,8 @@ const PreTasksPage = () => {
         onSuccess={() => {
           setHasEdited(true); // Enable button on successful save
         }}
+        readOnly={isManager || activeTab === 'COMPLETED'}
+        highlightMode={activeTab === 'COMPLETED' ? 'success' : 'error'}
       />
     </div>
   );

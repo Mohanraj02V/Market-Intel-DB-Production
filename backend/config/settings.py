@@ -124,7 +124,7 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 20,
+    'PAGE_SIZE': 50,
 }
 
 SIMPLE_JWT = {
@@ -182,3 +182,8 @@ if os.getenv('USE_OBJECT_STORAGE', 'false').lower() == 'true':
     AWS_S3_REGION_NAME = os.getenv('AWS_S3_REGION_NAME')
     AWS_DEFAULT_ACL = None
     AWS_S3_FILE_OVERWRITE = False
+
+# ── Manager Dashboard Timezone ────────────────────────────────────────────────
+# Override via MANAGER_REPORT_TIMEZONE env var (e.g., 'Asia/Kolkata').
+# Defaults to Django's TIME_ZONE so the reporting boundary is consistent.
+MANAGER_REPORT_TIMEZONE = os.getenv('MANAGER_REPORT_TIMEZONE', TIME_ZONE)

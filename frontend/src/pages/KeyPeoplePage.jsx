@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Search, Briefcase, Mail, Phone, CheckCircle, PhoneOff, PhoneMissed, PhoneCall, AlertCircle, Users } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import api from '../services/api';
+import Pagination from '../components/layout/Pagination';
 
 const CALL_STATUS_CONFIG = {
   'Connected':      { bg: 'bg-emerald-500', border: 'border-emerald-400', text: 'text-emerald-700', light: 'bg-emerald-50', ring: 'ring-emerald-400', label: 'Connected', icon: CheckCircle },
@@ -15,19 +16,35 @@ const CALL_STATUS_CONFIG = {
 const KeyPeoplePage = () => {
   const { user } = useSelector((state) => state.auth);
   const [contacts, setContacts] = useState([]);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => {
+    const userId = user?.id || 'default';
+    return sessionStorage.getItem(`keyPeopleSearch_${userId}`) || '';
+  });
   const [isLoading, setIsLoading] = useState(true);
+  const [page, setPage] = useState(() => {
+    const userId = user?.id || 'default';
+    return parseInt(sessionStorage.getItem(`keyPeoplePage_${userId}`)) || 1;
+  });
+  const [totalCount, setTotalCount] = useState(0);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const timer = setTimeout(() => fetchContacts(), 300);
+    const userId = user?.id || 'default';
+    sessionStorage.setItem(`keyPeopleSearch_${userId}`, searchTerm);
+    sessionStorage.setItem(`keyPeoplePage_${userId}`, page);
+  }, [searchTerm, page, user]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchContacts();
+    }, 300);
     return () => clearTimeout(timer);
-  }, [searchTerm]);
+  }, [searchTerm, page]);
 
   const fetchContacts = async () => {
     try {
       setIsLoading(true);
-      const endpoint = searchTerm ? `/key-contacts/?search=${searchTerm}` : '/key-contacts/';
+      const endpoint = `/key-contacts/?search=${searchTerm}&page=${page}`;
       const response = await api.get(endpoint);
       let data = response.data.results || response.data;
       
@@ -36,6 +53,7 @@ const KeyPeoplePage = () => {
         data = data.filter(c => c.email_verification_status === 'INVALID' || c.latest_call_status === 'Invalid Number');
       }
       setContacts(data);
+      setTotalCount(response.data.count || data.length);
     } catch (error) {
       console.error('Failed to fetch key contacts:', error);
     } finally {
@@ -44,7 +62,7 @@ const KeyPeoplePage = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+    <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
@@ -68,7 +86,7 @@ const KeyPeoplePage = () => {
             placeholder="Search by name, email, or company..."
             className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 font-medium transition"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
           />
         </div>
       </div>
@@ -159,6 +177,14 @@ const KeyPeoplePage = () => {
             );
           })}
         </div>
+      )}
+      {!isLoading && contacts.length > 0 && (
+        <Pagination 
+          currentPage={page} 
+          totalCount={totalCount} 
+          pageSize={50} 
+          onPageChange={setPage} 
+        />
       )}
     </div>
   );

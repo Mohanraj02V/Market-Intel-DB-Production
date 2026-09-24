@@ -1,12 +1,13 @@
 from django.utils import timezone
 from rest_framework.decorators import action, api_view
-from accounts.permissions import IsPRE, IsLQ, IsPREOrLQ
+from accounts.permissions import IsPRE, IsLQ, IsPREOrLQ, IsManagerOrSuperuser
 from rest_framework import viewsets, filters, status
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.permissions import IsAuthenticated
-from .models import Prospect, ProspectOffering, ProspectContact, LeadQualification, EmailVerification
-from .serializers import ProspectSerializer, LeadQualificationSerializer, ProspectContactSerializer
+from .models import Prospect, ProspectOffering, ProspectContact, LeadQualification, EmailVerification, AuditReverificationRequest
+from .serializers import ProspectSerializer, LeadQualificationSerializer, ProspectContactSerializer, AuditReverificationRequestSerializer
 
 def apply_lq_distribution_filter(queryset, user, prospect_field_prefix=''):
     """
@@ -42,29 +43,49 @@ class ProspectViewSet(viewsets.ModelViewSet):
     permission_classes = [IsPRE]
 
     def get_permissions(self):
+        # Manager (and superuser) can read all prospects but cannot mutate
+        user = getattr(self.request, 'user', None)
+        is_manager = (
+            user and not user.is_superuser and
+            hasattr(user, 'profile') and
+            getattr(user.profile, 'role', None) == 'MANAGER'
+        )
+        if is_manager:
+            if self.action in ['list', 'retrieve', 'audit_reverify']:
+                return [IsManagerOrSuperuser()]
+            raise PermissionDenied('Managers cannot modify prospect data.')
         if self.action in ['list', 'retrieve', 'add_contact']:
             permission_classes = [IsPREOrLQ]
         else:
             permission_classes = [IsPRE]
         return [permission() for permission in permission_classes]
 
+    def _is_manager(self):
+        user = self.request.user
+        return (
+            not user.is_superuser and
+            hasattr(user, 'profile') and
+            getattr(user.profile, 'role', None) == 'MANAGER'
+        )
 
-        filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['company_structure', 'operational_status', 'country_head_office', 'primary_offering_type']
     search_fields = ['company_name', 'country_head_office', 'primary_industries']
     ordering_fields = ['company_name', 'created_at', 'updated_at']
 
     def get_queryset(self):
         queryset = Prospect.objects.all().order_by('-updated_at')
-        
+
         # Role-based filtering
         user = self.request.user
         if not user.is_superuser and hasattr(user, 'profile'):
-            if user.profile.role == 'PRE':
+            role = user.profile.role
+            if role == 'PRE':
                 queryset = queryset.filter(created_by=user.username)
-            elif user.profile.role == 'LQ':
+            elif role == 'LQ':
                 queryset = apply_lq_distribution_filter(queryset, user, 'id__')
-            
+            # MANAGER sees all prospects (no filter)
+
         market_event = self.request.query_params.get('market_event')
         if market_event:
             queryset = queryset.filter(market_event_participations__market_event=market_event).distinct()
@@ -86,6 +107,61 @@ class ProspectViewSet(viewsets.ModelViewSet):
         self.perform_create(serializer)
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def perform_update(self, serializer):
+        prospect = serializer.save()
+        user = self.request.user
+        if not user.is_superuser and hasattr(user, 'profile') and user.profile.role == 'PRE':
+            pending_reqs = AuditReverificationRequest.objects.filter(
+                prospect=prospect,
+                status=AuditReverificationRequest.Status.PENDING
+            )
+            if pending_reqs.exists():
+                pending_reqs.update(
+                    status=AuditReverificationRequest.Status.CORRECTED,
+                    resolved_at=timezone.now()
+                )
+
+    @action(detail=True, methods=['post'], url_path='audit-reverify')
+    def audit_reverify(self, request, pk=None):
+        prospect = self.get_object()
+        highlighted_fields = request.data.get('highlighted_fields', [])
+        manager_notes = request.data.get('manager_notes', '')
+
+        if not highlighted_fields:
+            return Response({'error': 'Please provide fields to highlight for re-verification.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        pre_user = None
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        try:
+            pre_user = User.objects.get(username=prospect.created_by)
+        except User.DoesNotExist:
+            pass
+
+        req = AuditReverificationRequest.objects.create(
+            prospect=prospect,
+            manager=request.user,
+            pre_user=pre_user,
+            highlighted_fields=highlighted_fields,
+            manager_notes=manager_notes
+        )
+        
+        try:
+            lq = prospect.lead_qualification
+            lq.pre_task_status = LeadQualification.PreTaskStatus.ISSUE_SENT_TO_PRE
+            lq.issue_category = 'Audit: Re-Verification Required'
+            lq.issue_details = f"Manager Notes: {manager_notes}\nFields: {', '.join(highlighted_fields)}"
+            lq.issue_reported_by = request.user
+            lq.issue_reported_at = timezone.now()
+            for field in highlighted_fields:
+                lq.verification_checklist[field] = 'Incorrect'
+            lq.save()
+        except Exception as e:
+            print("Failed to update LeadQualification on audit_reverify:", e)
+            
+        from .serializers import AuditReverificationRequestSerializer
+        return Response(AuditReverificationRequestSerializer(req).data, status=status.HTTP_201_CREATED)
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user.username)
@@ -124,14 +200,31 @@ class ProspectViewSet(viewsets.ModelViewSet):
 class LQPipelineViewSet(viewsets.ModelViewSet):
     serializer_class = LeadQualificationSerializer
     permission_classes = [IsPREOrLQ]
+
+    def get_permissions(self):
+        """Manager can read all LQ pipeline records but cannot mutate."""
+        user = getattr(self.request, 'user', None)
+        is_manager = (
+            user and not user.is_superuser and
+            hasattr(user, 'profile') and
+            getattr(user.profile, 'role', None) == 'MANAGER'
+        )
+        if is_manager:
+            if self.action in ['list', 'retrieve']:
+                return [IsManagerOrSuperuser()]
+            raise PermissionDenied('Managers cannot modify LQ pipeline data.')
+        return [IsPREOrLQ()]
+
     def get_queryset(self):
         queryset = LeadQualification.objects.all().select_related('prospect').order_by('-updated_at')
         user = self.request.user
         if not user.is_superuser and hasattr(user, 'profile'):
-            if user.profile.role == 'PRE':
+            role = user.profile.role
+            if role == 'PRE':
                 queryset = queryset.filter(prospect__created_by=user.username)
-            elif user.profile.role == 'LQ':
+            elif role == 'LQ':
                 queryset = apply_lq_distribution_filter(queryset, user, 'prospect_id__')
+            # MANAGER sees all records (no filter)
         return queryset
 
 
@@ -203,6 +296,50 @@ class LQPipelineViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
 
+    def partial_update(self, request, *args, **kwargs):
+        """
+        Override to instrument audit timestamps on attended_meeting / qualification_status changes.
+        The existing LQ workspace PATCH flow is unchanged; we only add the new audit fields.
+        """
+        instance = self.get_object()
+        now = timezone.now()
+
+        # ── attended_at: set when attended_meeting transitions False -> True ──
+        new_attended = request.data.get('attended_meeting')
+        if new_attended is True or str(new_attended).lower() == 'true':
+            if not instance.attended_meeting:
+                # Only set if not already set (preserve original timestamp)
+                if not instance.attended_at:
+                    instance.attended_at = now
+
+        # ── decision_by / decision_at: set when qualification_status changes ──
+        new_status = request.data.get('qualification_status')
+        DECIDED_STATUSES = {'Lead Qualified', 'Disqualified', 'Lead Freeze', 'Nurture'}
+        if new_status and new_status in DECIDED_STATUSES:
+            if instance.qualification_status != new_status:
+                # New decision being recorded
+                instance.decision_by = request.user
+                instance.decision_at = now
+
+        # Save the audit fields we computed above before the regular update
+        update_audit = []
+        if not instance.attended_meeting and (new_attended is True or str(new_attended).lower() == 'true'):
+            if instance.attended_at == now:
+                update_audit.append('attended_at')
+        if new_status and new_status in DECIDED_STATUSES and instance.qualification_status != new_status:
+            update_audit.append('decision_by')
+            update_audit.append('decision_at')
+
+        if update_audit:
+            # Save audit fields first without modifying the state
+            LeadQualification.objects.filter(pk=instance.pk).update(**{
+                field: getattr(instance, field) for field in update_audit
+            })
+
+        # Proceed with normal DRF partial_update (honours all existing behaviour)
+        kwargs['partial'] = True
+        return super().update(request, *args, **kwargs)
+
         filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['verification_status', 'pre_task_status', 'qualification_status']
     search_fields = ['prospect__company_name', 'prospect__country_head_office', 'prospect__primary_industries']
@@ -264,6 +401,19 @@ class CallbackReminderViewSet(viewsets.ModelViewSet):
     serializer_class = CallbackReminderSerializer
     permission_classes = [IsAuthenticated]
 
+    def get_permissions(self):
+        user = getattr(self.request, 'user', None)
+        is_manager = (
+            user and not user.is_superuser and
+            hasattr(user, 'profile') and
+            getattr(user.profile, 'role', None) == 'MANAGER'
+        )
+        if is_manager:
+            if self.action in ['list', 'retrieve', 'pending']:
+                return [IsManagerOrSuperuser()]
+            raise PermissionDenied('Managers cannot modify reminders.')
+        return [IsAuthenticated()]
+
     def get_queryset(self):
         queryset = CallbackReminder.objects.filter(is_completed=False).order_by('scheduled_datetime')
         user = self.request.user
@@ -272,7 +422,7 @@ class CallbackReminderViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user.username)
+        serializer.save()
 
     @action(detail=False, methods=['get'], url_path='pending')
     def pending(self, request):
@@ -298,6 +448,19 @@ from .serializers import MeetingSerializer
 class MeetingViewSet(viewsets.ModelViewSet):
     serializer_class = MeetingSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        user = getattr(self.request, 'user', None)
+        is_manager = (
+            user and not user.is_superuser and
+            hasattr(user, 'profile') and
+            getattr(user.profile, 'role', None) == 'MANAGER'
+        )
+        if is_manager:
+            if self.action in ['list', 'retrieve', 'pending']:
+                return [IsManagerOrSuperuser()]
+            raise PermissionDenied('Managers cannot modify meetings.')
+        return [IsAuthenticated()]
 
     def get_queryset(self):
         user = self.request.user
@@ -352,6 +515,19 @@ class MeetingViewSet(viewsets.ModelViewSet):
 class ProspectContactViewSet(viewsets.ModelViewSet):
     serializer_class = ProspectContactSerializer
     permission_classes = [IsPREOrLQ]
+
+    def get_permissions(self):
+        user = getattr(self.request, 'user', None)
+        is_manager = (
+            user and not user.is_superuser and
+            hasattr(user, 'profile') and
+            getattr(user.profile, 'role', None) == 'MANAGER'
+        )
+        if is_manager:
+            if self.action in ['list', 'retrieve']:
+                return [IsManagerOrSuperuser()]
+            raise PermissionDenied('Managers cannot modify key contacts.')
+        return [IsPREOrLQ()]
     def get_queryset(self):
         queryset = ProspectContact.objects.all().select_related('prospect').order_by('-created_at')
         user = self.request.user
@@ -383,6 +559,17 @@ class CommunicationActivityViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = CommunicationActivitySerializer
     permission_classes = [IsPREOrLQ]
 
+    def get_permissions(self):
+        user = getattr(self.request, 'user', None)
+        is_manager = (
+            user and not user.is_superuser and
+            hasattr(user, 'profile') and
+            getattr(user.profile, 'role', None) == 'MANAGER'
+        )
+        if is_manager:
+            return [IsManagerOrSuperuser()]
+        return [IsPREOrLQ()]
+
     def get_queryset(self):
         queryset = CommunicationActivity.objects.all().order_by('-created_at')
         prospect_id = self.request.query_params.get('prospect')
@@ -401,6 +588,19 @@ class CommunicationActivityViewSet(viewsets.ReadOnlyModelViewSet):
 class CallActivityViewSet(viewsets.ModelViewSet):
     serializer_class = CallActivitySerializer
     permission_classes = [IsPREOrLQ]
+
+    def get_permissions(self):
+        user = getattr(self.request, 'user', None)
+        is_manager = (
+            user and not user.is_superuser and
+            hasattr(user, 'profile') and
+            getattr(user.profile, 'role', None) == 'MANAGER'
+        )
+        if is_manager:
+            if self.action in ['list', 'retrieve']:
+                return [IsManagerOrSuperuser()]
+            raise PermissionDenied('Managers cannot create or modify call activities.')
+        return [IsPREOrLQ()]
 
     def get_queryset(self):
         queryset = CallActivity.objects.all().order_by('-created_at')
@@ -421,13 +621,25 @@ class CallActivityViewSet(viewsets.ModelViewSet):
         if hasattr(self.request.user, 'profile') and self.request.user.profile.role != 'LQ':
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("Only LQ users can record calls.")
+        
+        direction = self.request.data.get('direction', 'OUTBOUND')
+        started_at_str = self.request.data.get('call_started_at')
+        
         call = serializer.save(created_by=self.request.user)
+        
+        if started_at_str:
+            from django.utils.dateparse import parse_datetime
+            dt = parse_datetime(started_at_str)
+            if dt:
+                CallActivity.objects.filter(id=call.id).update(call_started_at=dt)
+                call.refresh_from_db()
+
         # Create CommunicationActivity
-        CommunicationActivity.objects.create(
+        comm = CommunicationActivity.objects.create(
             prospect=call.prospect,
             prospect_contact=call.prospect_contact,
             activity_type='CALL',
-            direction='OUTBOUND',
+            direction=direction,
             status=call.call_status,
             outcome=call.communication_outcome,
             notes=call.notes,
@@ -436,21 +648,11 @@ class CallActivityViewSet(viewsets.ModelViewSet):
         )
 
 class OutreachEmailViewSet(viewsets.ModelViewSet):
-    @action(detail=False, methods=['post'])
-    def sync_imap(self, request):
-        if hasattr(request.user, 'profile') and request.user.profile.role != 'LQ':
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("Only LQ users can sync emails.")
-
-        from django.core.management import call_command
-
-        try:
-            call_command('sync_imap')
-            return Response({'message': 'IMAP Sync completed successfully.'}, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({'error': f"Error running sync_imap: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
     serializer_class = OutreachEmailSerializer
+
+    def get_permissions(self):
+        # Emails are LQ-only; Manager cannot mutate and effectively sees nothing
+        return [IsPREOrLQ()]
 
     def get_queryset(self):
         if hasattr(self.request.user, 'profile') and self.request.user.profile.role != 'LQ':
@@ -666,6 +868,20 @@ class OutreachEmailViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(outreach_email)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
+    @action(detail=False, methods=['post'])
+    def sync_imap(self, request):
+        if hasattr(request.user, 'profile') and request.user.profile.role != 'LQ':
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Only LQ users can sync emails.")
+
+        from django.core.management import call_command
+
+        try:
+            call_command('sync_imap')
+            return Response({'message': 'IMAP Sync completed successfully.'}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({'error': f"Error running sync_imap: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 from django.views import View
 from django.http import HttpResponse
 
@@ -765,3 +981,26 @@ def pre_dashboard_stats(request):
         'actual_progress': round(actual_progress, 1),
         'lead_qualified_percentage': round(lq_percentage, 1),
     })
+
+class AuditReverificationRequestViewSet(viewsets.ModelViewSet):
+    serializer_class = AuditReverificationRequestSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        queryset = AuditReverificationRequest.objects.all().order_by('-updated_at')
+        if user.is_superuser:
+            return queryset
+        if hasattr(user, 'profile'):
+            if user.profile.role == 'MANAGER':
+                return queryset.filter(manager=user)
+            elif user.profile.role == 'PRE':
+                return queryset.filter(pre_user=user)
+        return queryset.none()
+
+    @action(detail=True, methods=['post'], url_path='mark-notified')
+    def mark_notified(self, request, pk=None):
+        req = self.get_object()
+        req.manager_notified = True
+        req.save(update_fields=['manager_notified'])
+        return Response({'status': 'marked as notified'})

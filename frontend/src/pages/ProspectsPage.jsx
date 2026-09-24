@@ -5,17 +5,34 @@ import { fetchMarketEvents } from '../features/marketEvents/marketEventSlice';
 import ProspectForm from '../components/prospects/ProspectForm';
 import { Plus, Search, Edit2, Trash2, Building2, Eye, CheckCircle, XCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import Pagination from '../components/layout/Pagination';
 
 const ProspectsPage = () => {
   const dispatch = useDispatch();
   const { items, loading, error, count, next, previous } = useSelector((state) => state.prospects);
   const { items: marketEventsList } = useSelector((state) => state.marketEvents);
   const { user } = useSelector((state) => state.auth);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [marketEventFilter, setMarketEventFilter] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => {
+    const userId = user?.id || 'default';
+    return sessionStorage.getItem(`prospectsSearch_${userId}`) || '';
+  });
+  const [marketEventFilter, setMarketEventFilter] = useState(() => {
+    const userId = user?.id || 'default';
+    return sessionStorage.getItem(`prospectsMarketEvent_${userId}`) || '';
+  });
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingProspect, setEditingProspect] = useState(null);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => {
+    const userId = user?.id || 'default';
+    return parseInt(sessionStorage.getItem(`prospectsPage_${userId}`)) || 1;
+  });
+
+  useEffect(() => {
+    const userId = user?.id || 'default';
+    sessionStorage.setItem(`prospectsSearch_${userId}`, searchTerm);
+    sessionStorage.setItem(`prospectsMarketEvent_${userId}`, marketEventFilter);
+    sessionStorage.setItem(`prospectsPage_${userId}`, page);
+  }, [searchTerm, marketEventFilter, page, user]);
 
   useEffect(() => {
     dispatch(fetchMarketEvents({}));
@@ -228,29 +245,12 @@ const ProspectsPage = () => {
             </tbody>
           </table>
         </div>
-        
-        {/* Pagination controls */}
-        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
-          <div className="text-sm text-slate-700">
-            Showing page <span className="font-medium">{page}</span>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={!previous}
-              className="px-3 py-1 border border-slate-300 rounded-md bg-white text-slate-700 text-sm hover:bg-slate-50 disabled:opacity-50"
-            >
-              Previous
-            </button>
-            <button
-              onClick={() => setPage(p => p + 1)}
-              disabled={!next}
-              className="px-3 py-1 border border-slate-300 rounded-md bg-white text-slate-700 text-sm hover:bg-slate-50 disabled:opacity-50"
-            >
-              Next
-            </button>
-          </div>
-        </div>
+        <Pagination 
+          currentPage={page} 
+          totalCount={count || 0} 
+          pageSize={50} 
+          onPageChange={setPage} 
+        />
       </div>
 
       <ProspectForm 

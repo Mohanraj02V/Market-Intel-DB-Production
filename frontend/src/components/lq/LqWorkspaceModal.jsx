@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchCommunications, sendOutreachEmail, recordCall, syncImap } from '../../features/outreach/outreachSlice';
+import { confirmReverification } from '../../features/lqPipeline/lqPipelineSlice';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
 
@@ -64,14 +65,17 @@ export default function LqWorkspaceModal({
   verificationFields,
   handleFieldToggle,
   handleSubmitIssue,
-  handleReadyForOutreach
+  handleReadyForOutreach,
+  isConfirmingFixes,
+  correctedFields = []
 }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const dispatch = useDispatch();
   
   // Get safe prospect reference
   const prospect = selectedLq?.prospect || {};
-  const isVerified = selectedLq?.verification_status === 'Verified';
+  const [localVerified, setLocalVerified] = useState(selectedLq?.verification_status === 'Verified');
+  const isVerified = localVerified;
   const isLeadQualified = selectedLq?.qualification_status === 'Lead Qualified';
 
   // --- OUTREACH  // Outreach State
@@ -159,6 +163,17 @@ export default function LqWorkspaceModal({
   const [meetingDate, setMeetingDate] = useState('');
   const [meetingTime, setMeetingTime] = useState('');
   const [meetingLink, setMeetingLink] = useState('');
+
+  // Inbound State
+  const [inboundMode, setInboundMode] = useState(false);
+  const [inboundDate, setInboundDate] = useState(() => {
+    const d = new Date();
+    return d.toISOString().split('T')[0];
+  });
+  const [inboundTime, setInboundTime] = useState(() => {
+    const d = new Date();
+    return d.toTimeString().slice(0,5);
+  });
 
   // Backend Outreach Logs State
   const [outreachLogs, setOutreachLogs] = useState([]);
@@ -373,6 +388,43 @@ const handleAddCustomRecipient = (e) => {
 
   const [callError, setCallError] = useState('');
   const [localIssueSent, setLocalIssueSent] = useState(false);
+  const [isSubmittingActivity, setIsSubmittingActivity] = useState(false);
+
+  const handleSaveInbound = async (e) => {
+    e.preventDefault();
+    if (!callTranscriptNotes.trim()) {
+      setCallError('Notes are required for inbound communications.');
+      return;
+    }
+    
+    setCallError('');
+    setIsSubmittingActivity(true);
+    try {
+      const callPhone = selectedContactId
+        ? (prospect?.key_contacts?.find(c => c.id === selectedContactId)?.phone_number || prospect.official_phone_number || '')
+        : (prospect.official_phone_number || '');
+        
+      await dispatch(recordCall({
+        prospect: prospect.id,
+        prospect_contact: selectedContactId || null,
+        call_status: 'Inbound',
+        communication_outcome: 'Inbound Message',
+        company_phone: callPhone,
+        notes: `[Data Entered For: ${inboundDate} at ${inboundTime}]\n${callTranscriptNotes.trim()}`,
+        direction: 'INBOUND',
+        call_started_at: new Date(`${inboundDate}T${inboundTime}:00`).toISOString()
+      })).unwrap();
+
+      fetchOutreachLogs();
+      setCallTranscriptNotes('');
+      toast.success("Inbound activity recorded successfully.");
+    } catch (err) {
+      console.error("Failed to save inbound activity", err);
+      setCallError('Failed to save inbound activity. Please try again.');
+    } finally {
+      setIsSubmittingActivity(false);
+    }
+  };
 
   const handleLogCallOutcome = async (e) => {
     e.preventDefault();
@@ -516,7 +568,6 @@ const handleAddCustomRecipient = (e) => {
           });
           toast.info("Issue reported to PRE: Invalid Number. Contact restricted.");
           setLocalIssueSent(true);
-          return;
         } catch (err) {
           console.error("Failed to report invalid number issue", err);
         }
@@ -540,7 +591,8 @@ const handleAddCustomRecipient = (e) => {
       const descVal = communicationOutcome === 'Lead Qualified' ? `Meeting\nLink: ${meetingLink}\nAgenda: ${leadQualifiedDescription}` : (callbackDescription || 'Call Back Later');
       if (dVal && tVal) {
         try {
-          api.post('/reminders/', { prospect: prospect.id, scheduled_datetime: `${dVal}T${tVal}:00`, description: descVal });
+          const scheduled_datetime = new Date(`${dVal}T${tVal}:00`).toISOString();
+          api.post('/reminders/', { prospect: prospect.id, prospect_contact: selectedContactId || null, scheduled_datetime, description: descVal });
           if (communicationOutcome === 'Call Back Later') { setCallbackDate(''); setCallbackTime(''); setCallbackDescription(''); }
           else { setMeetingDate(''); setMeetingTime(''); setMeetingLink(''); setLeadQualifiedDescription(''); }
         } catch (e) {}
@@ -591,6 +643,7 @@ const handleAddCustomRecipient = (e) => {
           const scheduled_datetime = new Date(`${meetingDate}T${meetingTime}:00`).toISOString();
           await api.post(`/meetings/`, {
             prospect: prospect.id,
+            prospect_contact: selectedContactId || null,
             scheduled_datetime,
             meeting_link: meetingLink,
             agenda: leadQualifiedDescription
@@ -621,6 +674,14 @@ const handleAddCustomRecipient = (e) => {
       case 'email': return prospect?.official_email_address || '-';
       case 'contactNo': return prospect.official_phone_number || '-';
       case 'productService': return prospect.primary_offering_type || '-';
+      case 'primaryIndustries': return prospect.primary_industries || '-';
+      case 'companyStructure': return prospect.company_structure || '-';
+      case 'operationalStatus': return prospect.operational_status || '-';
+      case 'marketEvents': return prospect.market_events?.length ? prospect.market_events.map(e => e.name).join(', ') : '-';
+      case 'keyContacts': return prospect.key_contacts?.length ? prospect.key_contacts.map(c => `${c.contact_name} (${c.designation || 'No Designation'}) - ${c.official_email || 'No Email'}`).join(', ') : '-';
+      case 'products': return prospect.products?.length ? prospect.products.map(p => p.name).join(', ') : '-';
+      case 'services': return prospect.services?.length ? prospect.services.map(p => p.name).join(', ') : '-';
+      case 'solutions': return prospect.solutions?.length ? prospect.solutions.map(p => p.name).join(', ') : '-';
       default: return '-';
     }
   };
@@ -633,7 +694,15 @@ const handleAddCustomRecipient = (e) => {
     linkedIn: 'LinkedIn Page',
     email: 'Official Email',
     contactNo: 'Contact No.',
-    productService: 'Product, Service & Solution'
+    productService: 'Product, Service & Solution',
+    primaryIndustries: 'Primary Industries',
+    companyStructure: 'Company Structure',
+    operationalStatus: 'Operational Status',
+    marketEvents: 'Market Events',
+    keyContacts: 'Key Contacts',
+    products: 'Products',
+    services: 'Services',
+    solutions: 'Solutions'
   };
 
   // Helper for automated issues
@@ -755,7 +824,12 @@ const handleAddCustomRecipient = (e) => {
                       {Object.entries(fieldNames).map(([key, label]) => (
                         <div key={key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-slate-50 border border-slate-100 rounded-lg">
                           <div className="flex-1 min-w-0 pr-4">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">{label}</label>
+                            <div className="flex items-center gap-2 mb-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{label}</label>
+                              {isConfirmingFixes && correctedFields.includes(key) && (
+                                <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 text-[9px] font-black rounded uppercase tracking-widest border border-emerald-200">Fixed by PRE</span>
+                              )}
+                            </div>
                             <div className="text-sm font-medium text-slate-900 truncate" title={getFieldValue(key)}>{getFieldValue(key)}</div>
                           </div>
                           <div className="flex bg-white rounded-lg border border-slate-200 overflow-hidden shrink-0 shadow-sm mt-2 sm:mt-0">
@@ -783,8 +857,17 @@ const handleAddCustomRecipient = (e) => {
                     <AlertTriangle className="w-4 h-4" /> Submit Issue to PRE
                   </button>
                 ) : allCorrect ? (
-                  <button onClick={() => { handleReadyForOutreach(); setActiveTab('outreach'); }} className="px-5 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition shadow-sm flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4" /> Ready for Outreach
+                  <button onClick={() => { 
+                    if (isConfirmingFixes) {
+                      dispatch(confirmReverification(selectedLq.id));
+                    }
+                    if (!localVerified) {
+                      handleReadyForOutreach(true); 
+                      setLocalVerified(true);
+                    }
+                    setActiveTab('outreach'); 
+                  }} className="px-5 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition shadow-sm flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4" /> {isConfirmingFixes || localVerified ? 'Move back to Outreach' : 'Ready for Outreach'}
                   </button>
                 ) : (
                   <button disabled className="px-5 py-2 text-sm font-bold text-slate-400 bg-slate-100 rounded-lg cursor-not-allowed">
@@ -1009,12 +1092,29 @@ const handleAddCustomRecipient = (e) => {
                         </button>
                       </div>
                     ) : (
-                      <form onSubmit={handleLogCallOutcome} className="p-5 space-y-5 text-xs">
+                      <>
+                        <div className="flex border-b border-slate-200">
+                          <button 
+                            type="button"
+                            onClick={() => setInboundMode(false)}
+                            className={`flex-1 py-3 text-xs font-bold transition-all border-b-2 ${!inboundMode ? 'border-indigo-600 text-indigo-700 bg-indigo-50/30' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-700'}`}
+                          >
+                            Outbound Call
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => setInboundMode(true)}
+                            className={`flex-1 py-3 text-xs font-bold transition-all border-b-2 ${inboundMode ? 'border-emerald-600 text-emerald-700 bg-emerald-50/30' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-700'}`}
+                          >
+                            Inbound Call/Message
+                          </button>
+                        </div>
+                      <form onSubmit={inboundMode ? handleSaveInbound : handleLogCallOutcome} className="p-5 space-y-5 text-xs">
                         {/* Key People Dropdown + Phone Display */}
                         <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-4 shadow-sm">
                           <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
                             <div className="flex-1">
-                              <label className="block font-extrabold text-slate-700 text-[10px] uppercase tracking-wider mb-1.5">Select Key Person to Call</label>
+                              <label className="block font-extrabold text-slate-700 text-[10px] uppercase tracking-wider mb-1.5">Select Key Person</label>
                               <select
                                 value={selectedContactId}
                                 onChange={(e) => {
@@ -1051,10 +1151,12 @@ const handleAddCustomRecipient = (e) => {
                                 })}
                               </select>
                             </div>
-                            <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
-                              <label className="text-xs font-bold text-slate-700 whitespace-nowrap">IVR Ext:</label>
-                              <input type="text" value={ivrExtension} onChange={(e) => setIvrExtension(e.target.value)} placeholder="e.g. Ext. 104" className="p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-extrabold text-slate-900 w-28 focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all" />
-                            </div>
+                            {!inboundMode && (
+                              <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+                                <label className="text-xs font-bold text-slate-700 whitespace-nowrap">IVR Ext:</label>
+                                <input type="text" value={ivrExtension} onChange={(e) => setIvrExtension(e.target.value)} placeholder="e.g. Ext. 104" className="p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-extrabold text-slate-900 w-28 focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all" />
+                              </div>
+                            )}
                           </div>
                           <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
                             <Phone className="w-4 h-4 text-slate-500 shrink-0" />
@@ -1094,29 +1196,31 @@ const handleAddCustomRecipient = (e) => {
                             )}
                           </div>
                         </div>
-                        <div className="pt-2">
-                          <label className="block font-extrabold text-slate-700 mb-2.5 uppercase tracking-wider text-[10px]">1. Record Call Status Outcome</label>
-                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                            {[
-                              { label: 'Connected',      active: 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-sm ring-1 ring-emerald-500/20', idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
-                              { label: 'No Answer',      active: 'bg-amber-50 border-amber-500 text-amber-900 shadow-sm ring-1 ring-amber-500/20',   idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
-                              { label: 'Busy',           active: 'bg-orange-50 border-orange-500 text-orange-900 shadow-sm ring-1 ring-orange-500/20', idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
-                              { label: 'Switched Off',   active: 'bg-rose-50 border-rose-500 text-rose-900 shadow-sm ring-1 ring-rose-500/20',       idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
-                              { label: 'Invalid Number', active: 'bg-slate-100 border-slate-500 text-slate-900 shadow-sm ring-1 ring-slate-500/20',    idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
-                            ].map(({ label, active, idle }) => (
-                              <button
-                                key={label}
-                                type="button"
-                                disabled={isContactLockedCheck(selectedContactId)}
-                                onClick={() => setCallStatus(label)}
-                                className={`p-2.5 rounded-lg border text-center font-extrabold text-xs transition-all ${callStatus === label ? active : idle} ${isContactLockedCheck(selectedContactId) ? 'opacity-50 cursor-not-allowed bg-slate-50' : ''}`}
-                              >
-                                {label}
-                              </button>
-                            ))}
+                        {!inboundMode && (
+                          <div className="pt-2">
+                            <label className="block font-extrabold text-slate-700 mb-2.5 uppercase tracking-wider text-[10px]">1. Record Call Status Outcome</label>
+                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                              {[
+                                { label: 'Connected',      active: 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-sm ring-1 ring-emerald-500/20', idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
+                                { label: 'No Answer',      active: 'bg-amber-50 border-amber-500 text-amber-900 shadow-sm ring-1 ring-amber-500/20',   idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
+                                { label: 'Busy',           active: 'bg-orange-50 border-orange-500 text-orange-900 shadow-sm ring-1 ring-orange-500/20', idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
+                                { label: 'Switched Off',   active: 'bg-rose-50 border-rose-500 text-rose-900 shadow-sm ring-1 ring-rose-500/20',       idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
+                                { label: 'Invalid Number', active: 'bg-slate-100 border-slate-500 text-slate-900 shadow-sm ring-1 ring-slate-500/20',    idle: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300' },
+                              ].map(({ label, active, idle }) => (
+                                <button
+                                  key={label}
+                                  type="button"
+                                  disabled={isContactLockedCheck(selectedContactId)}
+                                  onClick={() => setCallStatus(label)}
+                                  className={`p-2.5 rounded-lg border text-center font-extrabold text-xs transition-all ${callStatus === label ? active : idle} ${isContactLockedCheck(selectedContactId) ? 'opacity-50 cursor-not-allowed bg-slate-50' : ''}`}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                        {callStatus === 'Connected' && (
+                        )}
+                        {!inboundMode && callStatus === 'Connected' && (
                           <div className="space-y-4 pt-4 border-t border-slate-100">
                             <div>
                               <label className="block font-extrabold text-slate-700 mb-2.5 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
@@ -1286,11 +1390,27 @@ const handleAddCustomRecipient = (e) => {
                             )}
                           </div>
                         )}
+                        {inboundMode && (
+                          <div className="p-4 bg-emerald-50/50 border border-emerald-200 rounded-xl mt-4">
+                            <span className="font-extrabold text-emerald-900 text-xs mb-3 block uppercase tracking-wider">📅 Inbound Data Entry Details</span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-700 mb-1.5">Date Received *</label>
+                                <input type="date" value={inboundDate} onChange={(e) => setInboundDate(e.target.value)} className="w-full p-2.5 bg-white border border-emerald-300 rounded-lg text-xs font-semibold focus:outline-none" required />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-700 mb-1.5">Time Received *</label>
+                                <TimeSelect value={inboundTime} onChange={setInboundTime} />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Hide transcript when a structured outcome form is already capturing detail */}
-                        {!['Requested Email', 'Call Back Later', 'Call Transferred', 'Shared Another Contact', 'Not Interested', 'Lead Qualified'].includes(communicationOutcome) && (
+                        {(inboundMode || !['Requested Email', 'Call Back Later', 'Call Transferred', 'Shared Another Contact', 'Not Interested', 'Lead Qualified'].includes(communicationOutcome)) && (
                           <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-2 shadow-sm mt-4">
-                            <label className="block font-extrabold text-slate-700 mb-1.5 text-[10px] uppercase tracking-wider">Call Transcript &amp; Discussion Summary</label>
-                            <textarea rows={3} value={callTranscriptNotes} onChange={(e) => setCallTranscriptNotes(e.target.value)} placeholder="Enter notes from call conversation..." className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all resize-none" />
+                            <label className="block font-extrabold text-slate-700 mb-1.5 text-[10px] uppercase tracking-wider">{inboundMode ? 'Inbound Message / Notes *' : 'Call Transcript & Discussion Summary'}</label>
+                            <textarea rows={3} value={callTranscriptNotes} onChange={(e) => setCallTranscriptNotes(e.target.value)} placeholder={inboundMode ? "Enter notes regarding the inbound message..." : "Enter notes from call conversation..."} className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all resize-none" />
                           </div>
                         )}
                         <div className="flex flex-col gap-2 pt-1">
@@ -1302,16 +1422,18 @@ const handleAddCustomRecipient = (e) => {
                           )}
                           <div className="flex justify-end">
                             {(() => {
-                              const isContactInvalid = isContactLockedCheck(selectedContactId);
+                              const isContactInvalid = !inboundMode && isContactLockedCheck(selectedContactId);
+                              const isDisabled = isContactInvalid || isSubmittingActivity;
                               return (
-                                <button type="submit" disabled={isContactInvalid} className={`px-5 py-2.5 font-extrabold text-xs rounded-xl transition shadow-sm flex items-center gap-2 ${isContactInvalid ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'}`}>
-                                  <Phone className="w-4 h-4" /><span>Record Call Outcome &amp; Save Activity</span>
+                                <button type="submit" disabled={isDisabled} className={`px-5 py-2.5 font-extrabold text-xs rounded-xl transition shadow-sm flex items-center gap-2 ${isDisabled ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'}`}>
+                                  <Phone className="w-4 h-4" /><span>{isSubmittingActivity ? 'Saving...' : (inboundMode ? 'Record Inbound Activity' : 'Record Call Outcome & Save Activity')}</span>
                                 </button>
                               );
                             })()}
                           </div>
                         </div>
                       </form>
+                      </>
                     )}
                   </div>
 

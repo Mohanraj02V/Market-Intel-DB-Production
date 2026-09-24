@@ -7,9 +7,10 @@ class UserProfile(models.Model):
     ROLE_CHOICES = (
         ('PRE', 'Prospect Research Engineer'),
         ('LQ', 'Lead Qualifier'),
+        ('MANAGER', 'Manager'),
     )
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
-    role = models.CharField(max_length=3, choices=ROLE_CHOICES, default='PRE')
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='PRE')
     mail_account = models.ForeignKey('MailAccount', on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_users')
 
     def __str__(self):

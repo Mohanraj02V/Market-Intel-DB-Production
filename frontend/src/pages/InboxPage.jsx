@@ -253,7 +253,7 @@ const InboxPage = () => {
   });
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 flex flex-col h-[calc(100vh-64px)] overflow-hidden">
+    <div className="space-y-6 flex flex-col h-[calc(100vh-64px)] overflow-hidden">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
         <div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">

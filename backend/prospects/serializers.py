@@ -1,6 +1,6 @@
 from market_events.serializers import MarketEventSimpleSerializer
 from rest_framework import serializers
-from .models import Prospect, ProspectOffering, ProspectContact
+from .models import Prospect, ProspectOffering, ProspectContact, AuditReverificationRequest
 
 class ProspectOfferingSerializer(serializers.ModelSerializer):
     class Meta:
@@ -249,15 +249,24 @@ from .models import CallbackReminder
 
 class CallbackReminderSerializer(serializers.ModelSerializer):
     company_name = serializers.CharField(source='prospect.company_name', read_only=True)
+    key_person_name = serializers.SerializerMethodField()
 
     class Meta:
         model = CallbackReminder
         fields = [
-            'id', 'prospect', 'company_name', 'scheduled_datetime',
+            'id', 'prospect', 'company_name', 'key_person_name', 'scheduled_datetime',
             'description', 'is_completed', 'notified_30m',
             'notified_15m', 'notified_5m', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_key_person_name(self, obj):
+        if hasattr(obj, 'prospect_contact') and obj.prospect_contact:
+            return obj.prospect_contact.contact_name
+        first_contact = obj.prospect.key_contacts.first()
+        if first_contact:
+            return first_contact.contact_name
+        return None
 
 from .models import Meeting
 
@@ -276,6 +285,8 @@ class MeetingSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def get_key_person_name(self, obj):
+        if hasattr(obj, 'prospect_contact') and obj.prospect_contact:
+            return obj.prospect_contact.contact_name
         first_contact = obj.prospect.key_contacts.first()
         if first_contact:
             return first_contact.contact_name
@@ -345,3 +356,13 @@ class CommunicationActivitySerializer(serializers.ModelSerializer):
             'call_activity', 'call_activity_detail', 'performed_by', 'performed_by_name', 'created_at'
         ]
         read_only_fields = ['id', 'performed_by', 'performed_by_name', 'created_at']
+
+class AuditReverificationRequestSerializer(serializers.ModelSerializer):
+    manager_name = serializers.CharField(source='manager.username', read_only=True)
+    pre_user_name = serializers.CharField(source='pre_user.username', read_only=True)
+    prospect_company_name = serializers.CharField(source='prospect.company_name', read_only=True)
+
+    class Meta:
+        model = AuditReverificationRequest
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at', 'resolved_at', 'manager_notified']

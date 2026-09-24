@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, ExternalLink } from "lucide-react";
 import api from "../services/api";
 
@@ -7,13 +7,13 @@ const START_HOUR = 7;
 const END_HOUR = 23;
 
 export default function LqCalendarPage() {
-  const [meetings, setMeetings] = useState([]);
+  const [events, setEvents] = useState([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [nowMinute, setNowMinute] = useState(0);
   const scrollRef = useRef(null);
 
-  useEffect(() => { fetchMeetings(); }, [currentDate]);
+  useEffect(() => { fetchEvents(); }, [currentDate]);
 
   useEffect(() => {
     const update = () => {
@@ -34,13 +34,21 @@ export default function LqCalendarPage() {
     }
   }, [loading]);
 
-  const fetchMeetings = async () => {
+  const fetchEvents = async () => {
     setLoading(true);
     try {
-      const res = await api.get("/meetings/");
-      setMeetings(res.data.results || res.data || []);
+      const [meetingsRes, remindersRes] = await Promise.all([
+        api.get("/meetings/"),
+        api.get("/reminders/pending/")
+      ]);
+      const mData = meetingsRes.data.results || meetingsRes.data || [];
+      const rData = remindersRes.data.results || remindersRes.data || [];
+
+      const mappedMeetings = mData.map(m => ({ ...m, eventType: 'meeting' }));
+      const mappedReminders = rData.map(r => ({ ...r, eventType: 'callback' }));
+      setEvents([...mappedMeetings, ...mappedReminders]);
     } catch (err) {
-      console.error("MEETINGS API ERROR:", err);
+      console.error("API ERROR:", err);
     }
     setLoading(false);
   };
@@ -81,10 +89,10 @@ export default function LqCalendarPage() {
 
   const isToday = (d) => isSameDay(d, new Date());
 
-  const getMeetingsForSlot = (day, hour) =>
-    meetings.filter(m => {
-      const mDate = new Date(m.scheduled_datetime);
-      return isSameDay(mDate, day) && mDate.getHours() === hour;
+  const getEventsForSlot = (day, hour) =>
+    events.filter(e => {
+      const eDate = new Date(e.scheduled_datetime);
+      return isSameDay(eDate, day) && eDate.getHours() === hour;
     });
 
   const isCurrentWeek = weekDays.some(d => isToday(d));
@@ -108,7 +116,7 @@ export default function LqCalendarPage() {
           <div>
             <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0f172a" }}>Meeting Calendar</h1>
             <p style={{ margin: 0, fontSize: 11, color: "#94a3b8", fontWeight: 600 }}>
-              {meetings.length} scheduled meeting{meetings.length !== 1 ? "s" : ""}
+              {events.length} scheduled event{events.length !== 1 ? "s" : ""}
             </p>
           </div>
         </div>
@@ -172,33 +180,46 @@ export default function LqCalendarPage() {
                 <span style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8" }}>{formatHour(hour)}</span>
               </div>
               {weekDays.map((day) => {
-                const slotMeetings = getMeetingsForSlot(day, hour);
+                const slotEvents = getEventsForSlot(day, hour);
                 return (
                   <div key={`${day.getTime()}-${hour}`} style={{ borderRight: "1px solid #f1f5f9", padding: 4, background: isToday(day) ? "rgba(238,242,255,0.3)" : "transparent" }}>
-                    {slotMeetings.map(m => (
-                      <div key={m.id} style={{ background: "linear-gradient(135deg, #4f46e5, #6366f1)", borderRadius: 10, padding: "8px 10px", color: "#fff", marginBottom: 4, boxShadow: "0 2px 8px rgba(79,70,229,0.25)", cursor: "pointer", transition: "transform 0.1s, box-shadow 0.1s" }}
-                        onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 4px 12px rgba(79,70,229,0.4)"; }}
-                        onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 2px 8px rgba(79,70,229,0.25)"; }}
-                      >
-                        <div style={{ fontSize: 12, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.company_name}</div>
-                        {m.key_person_name && (
-                          <div style={{ fontSize: 10, color: "#c7d2fe", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }}>{m.key_person_name}</div>
-                        )}
-                        <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4 }}>
-                          <Clock size={10} color="#a5b4fc" />
-                          <span style={{ fontSize: 10, fontWeight: 600, color: "#c7d2fe" }}>
-                            {new Date(m.scheduled_datetime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                          </span>
+                    {slotEvents.map(e => {
+                      const isMeeting = e.eventType === 'meeting';
+                      const bgGradient = isMeeting ? "linear-gradient(135deg, #4f46e5, #6366f1)" : "linear-gradient(135deg, #059669, #10b981)";
+                      const hoverShadow = isMeeting ? "rgba(79,70,229,0.4)" : "rgba(16,185,129,0.4)";
+                      const baseShadow = isMeeting ? "rgba(79,70,229,0.25)" : "rgba(16,185,129,0.25)";
+                      const subTextColor = isMeeting ? "#c7d2fe" : "#a7f3d0";
+                      
+                      return (
+                        <div key={`${e.eventType}-${e.id}`} style={{ background: bgGradient, borderRadius: 10, padding: "8px 10px", color: "#fff", marginBottom: 4, boxShadow: `0 2px 8px ${baseShadow}`, cursor: "pointer", transition: "transform 0.1s, box-shadow 0.1s" }}
+                          onMouseEnter={ev => { ev.currentTarget.style.transform = "translateY(-1px)"; ev.currentTarget.style.boxShadow = `0 4px 12px ${hoverShadow}`; }}
+                          onMouseLeave={ev => { ev.currentTarget.style.transform = ""; ev.currentTarget.style.boxShadow = `0 2px 8px ${baseShadow}`; }}
+                        >
+                          <div style={{ fontSize: 12, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.company_name}</div>
+                          {e.key_person_name && (
+                            <div style={{ fontSize: 10, color: subTextColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }}>{e.key_person_name}</div>
+                          )}
+                          <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4 }}>
+                            <Clock size={10} color={subTextColor} />
+                            <span style={{ fontSize: 10, fontWeight: 600, color: subTextColor }}>
+                              {new Date(e.scheduled_datetime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          </div>
+                          {!isMeeting && e.description && (
+                            <div style={{ fontSize: 9, color: subTextColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 4 }}>
+                              Call Back: {e.description}
+                            </div>
+                          )}
+                          {isMeeting && e.meeting_link && (
+                            <a href={e.meeting_link} target="_blank" rel="noreferrer"
+                              style={{ display: "inline-flex", alignItems: "center", gap: 3, marginTop: 5, fontSize: 10, fontWeight: 700, background: "rgba(255,255,255,0.2)", padding: "2px 6px", borderRadius: 4, color: "#fff", textDecoration: "none" }}
+                              onClick={ev => ev.stopPropagation()}>
+                              <ExternalLink size={10} /> Join
+                            </a>
+                          )}
                         </div>
-                        {m.meeting_link && (
-                          <a href={m.meeting_link} target="_blank" rel="noreferrer"
-                            style={{ display: "inline-flex", alignItems: "center", gap: 3, marginTop: 5, fontSize: 10, fontWeight: 700, background: "rgba(255,255,255,0.2)", padding: "2px 6px", borderRadius: 4, color: "#fff", textDecoration: "none" }}
-                            onClick={e => e.stopPropagation()}>
-                            <ExternalLink size={10} /> Join
-                          </a>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 );
               })}

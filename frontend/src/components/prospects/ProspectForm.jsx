@@ -6,7 +6,9 @@ import { X, Plus, Trash2, Building, Network } from 'lucide-react';
 import api from '../../services/api';
 import { toast } from 'react-toastify';
 
-const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], onSuccess = null }) => {
+const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], onSuccess = null, readOnly = false, highlightMode = 'error' }) => {
+  const hColor = highlightMode === 'success' ? 'emerald' : 'red';
+  const hClass = `border-2 border-${hColor}-500 bg-${hColor}-50/30 focus:border-${hColor}-500 focus:ring-${hColor}-500 text-${hColor}-900`;
   const dispatch = useDispatch();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -377,6 +379,7 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
               {error}
             </div>
           )}
+          <fieldset disabled={readOnly} className="space-y-8">
 
           {/* Section 1: Corporate Structure */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
@@ -395,7 +398,7 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">COMPANY STRUCTURE *</label>
-                <select name="company_structure" value={formData.company_structure} onChange={handleChange} className="w-full rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3 border bg-white text-slate-900">
+                <select name="company_structure" value={formData.company_structure} onChange={handleChange} className={`w-full rounded-lg shadow-sm sm:text-sm py-2 px-3 bg-white text-slate-900 ${highlightFields?.includes('company_structure') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`}>
                   <option value="Parent">Parent Organization (Ultimate Holding / HQ)</option>
                   <option value="Branch">Branch Office (Local Operational Branch)</option>
                   <option value="Subsidiary">Subsidiary Company (Owned Subsidiary / JV)</option>
@@ -404,7 +407,7 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
               
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">OPERATIONAL STATUS *</label>
-                <select name="operational_status" value={formData.operational_status} onChange={handleChange} className="w-full rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3 border bg-white text-slate-900">
+                <select name="operational_status" value={formData.operational_status} onChange={handleChange} className={`w-full rounded-lg shadow-sm sm:text-sm py-2 px-3 bg-white text-slate-900 ${highlightFields?.includes('operational_status') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`}>
                   <option value="Active">Active</option>
                   <option value="Inactive">Inactive</option>
                   <option value="Permanently Closed">Permanently Closed</option>
@@ -467,23 +470,23 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Company Name *</label>
-                  <input type="text" name="company_name" value={formData.company_name} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('company_name') ? 'border-2 border-red-500 bg-red-50/30 focus:border-red-500 focus:ring-red-500' : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
+                  <input type="text" name="company_name" value={formData.company_name} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('company_name') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Country (Head Office) *</label>
-                  <input type="text" name="country_head_office" value={formData.country_head_office} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('country_head_office') ? 'border-2 border-red-500 bg-red-50/30 focus:border-red-500 focus:ring-red-500' : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
+                  <input type="text" name="country_head_office" value={formData.country_head_office} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('country_head_office') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
                 </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Complete Address *</label>
-                <textarea name="complete_address" rows="2" value={formData.complete_address} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('complete_address') ? 'border-2 border-red-500 bg-red-50/30 focus:border-red-500 focus:ring-red-500' : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`}></textarea>
+                <textarea name="complete_address" rows="2" value={formData.complete_address} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('complete_address') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`}></textarea>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Official Phone Number</label>
-                  <input type="text" name="official_phone_number" value={formData.official_phone_number} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('official_phone_number') ? 'border-2 border-red-500 bg-red-50/30 focus:border-red-500 focus:ring-red-500' : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
+                  <input type="text" name="official_phone_number" value={formData.official_phone_number} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('official_phone_number') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1">
@@ -521,22 +524,22 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
                       </div>
                     )}
                   </div>
-                  <input type="email" name="official_email_address" value={formData.official_email_address} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('official_email_address') ? 'border-2 border-red-500 bg-red-50/30 focus:border-red-500 focus:ring-red-500' : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
+                  <input type="email" name="official_email_address" value={formData.official_email_address} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('official_email_address') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Official Website URL</label>
-                  <input type="url" name="official_website_url" value={formData.official_website_url} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('official_website_url') ? 'border-2 border-red-500 bg-red-50/30 focus:border-red-500 focus:ring-red-500' : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
+                  <input type="url" name="official_website_url" value={formData.official_website_url} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('official_website_url') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">LinkedIn Company Page</label>
-                  <input type="url" name="linkedin_company_page" value={formData.linkedin_company_page} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('linkedin_company_page') ? 'border-2 border-red-500 bg-red-50/30 focus:border-red-500 focus:ring-red-500' : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
+                  <input type="url" name="linkedin_company_page" value={formData.linkedin_company_page} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('linkedin_company_page') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Primary Industries *</label>
-                  <input type="text" name="primary_industries" value={formData.primary_industries} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('primary_industries') ? 'border-2 border-red-500 bg-red-50/30 focus:border-red-500 focus:ring-red-500' : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
+                  <input type="text" name="primary_industries" value={formData.primary_industries} onChange={handleChange} className={`w-full rounded-lg  shadow-sm  sm:text-sm py-2 px-3 text-slate-900 ${highlightFields?.includes('primary_industries') ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
                 </div>
               </div>
             </div>
@@ -727,7 +730,7 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">Phone Number</label>
-                      <input type="text" value={contact.phone_number} onChange={(e) => handleContactChange(index, 'phone_number', e.target.value)} className={`w-full rounded shadow-sm sm:text-sm py-1.5 px-3 text-slate-900 ${contact.latest_call_status === 'Invalid Number' ? 'border-2 border-red-500 bg-red-50/30 focus:border-red-500 focus:ring-red-500' : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
+                      <input type="text" value={contact.phone_number} onChange={(e) => handleContactChange(index, 'phone_number', e.target.value)} className={`w-full rounded shadow-sm sm:text-sm py-1.5 px-3 text-slate-900 ${contact.latest_call_status === 'Invalid Number' ? hClass : 'border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500'}`} />
                     </div>
                     <div className="md:col-span-2">
                       <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">LinkedIn Profile</label>
@@ -742,16 +745,19 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
                 </div>
               )}
             </div>
-          </div>
+            </div>
+          </fieldset>
         </div>
 
         <div className="px-6 py-4 border-t border-slate-200 bg-white flex justify-end gap-3 sticky bottom-0">
           <button type="button" onClick={onClose} className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 text-sm font-medium transition-colors">
-            Cancel
+            {readOnly ? 'Close' : 'Cancel'}
           </button>
-          <button type="button" onClick={handleSubmit} disabled={loading} className="px-5 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium disabled:opacity-50 transition-colors shadow-sm">
-            {loading ? 'Saving...' : 'Save Prospect Record'}
-          </button>
+          {!readOnly && (
+            <button type="button" onClick={handleSubmit} disabled={loading} className="px-5 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium disabled:opacity-50 transition-colors shadow-sm">
+              {loading ? 'Saving...' : 'Save Prospect Record'}
+            </button>
+          )}
         </div>
       </div>
     </div>

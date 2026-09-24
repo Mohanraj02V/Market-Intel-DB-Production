@@ -1,7 +1,7 @@
 import React from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
-import { LogOut, Users, Calendar, Activity, ClipboardList, UserCircle, Mail, LayoutDashboard } from 'lucide-react';
+import { LogOut, Users, Calendar, Activity, ClipboardList, UserCircle, Mail, LayoutDashboard, Shield, BarChart2, Eye } from 'lucide-react';
 import { logout } from '../../features/auth/authSlice';
 import NotificationCenter from './NotificationCenter';
 
@@ -50,6 +50,17 @@ const Layout = () => {
       { path: '/key-people', label: 'Key People', icon: UserCircle },
       { path: '/market-events', label: 'Market Events', icon: Calendar },
       { path: '/inbox', label: 'Inbox', icon: Mail, badge: unreadCount > 0 ? unreadCount : null }
+    );
+  } else if (user?.role === 'MANAGER') {
+    navItems.push(
+      { path: '/manager-dashboard', label: 'Manager Dashboard', icon: Shield },
+      { path: '/manager-audit', label: 'Daily Audit', icon: ClipboardList },
+      { path: '/prospects', label: 'Prospects', icon: Users },
+      { path: '/lq-pipeline', label: 'LQ Pipeline', icon: Activity },
+      { path: '/key-people', label: 'Key People', icon: UserCircle },
+      { path: '/market-events', label: 'Market Events', icon: Calendar },
+      { path: '/pre-tasks', label: 'Tasks', icon: ClipboardList },
+      { path: '/users', label: 'User Management', icon: Users },
     );
   }
 
@@ -142,7 +153,15 @@ const Layout = () => {
                 <span className="truncate font-semibold">{user.first_name} {user.last_name}</span>
               </div>
               <div className="text-xs text-slate-500 mt-1 font-medium">
-                {user.role === 'PRE' ? 'Prospect Research Engineer' : 'Lead Qualifier'}
+                {user.role === 'PRE'
+                  ? 'Prospect Research Engineer'
+                  : user.role === 'LQ'
+                  ? 'Lead Qualifier'
+                  : user.role === 'MANAGER'
+                  ? 'Manager'
+                  : user.is_superuser
+                  ? 'Administrator'
+                  : user.role}
               </div>
             </div>
           </div>
@@ -151,7 +170,7 @@ const Layout = () => {
 
       {/* Main Content */}
       <main className="flex-1 min-w-0 h-screen overflow-y-auto bg-slate-50">
-        <div className={['/dashboard', '/calendar'].includes(location.pathname) ? 'h-full' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 h-full'}>
+        <div className={['/dashboard', '/calendar', '/manager-dashboard'].includes(location.pathname) ? 'h-full' : 'w-full px-4 sm:px-8 lg:px-12 py-8 h-full'}>
           <Outlet />
         </div>
       </main>

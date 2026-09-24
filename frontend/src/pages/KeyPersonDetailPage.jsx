@@ -41,7 +41,7 @@ const KeyPersonDetailPage = () => {
   if (!contact) return null;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+    <div className="space-y-6">
       <button 
         onClick={() => navigate('/key-people')}
         className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 transition font-bold text-sm"

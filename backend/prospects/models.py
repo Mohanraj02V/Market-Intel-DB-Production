@@ -119,6 +119,13 @@ class LeadQualification(models.Model):
     qualified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='qualifications_performed')
     qualified_at = models.DateTimeField(null=True, blank=True)
 
+    # Audit timestamp: set when attended_meeting transitions False -> True
+    attended_at = models.DateTimeField(null=True, blank=True)
+
+    # Qualification decision tracking: who made a qualification decision and when
+    decision_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='qualification_decisions')
+    decision_at = models.DateTimeField(null=True, blank=True)
+
     # Issue Reporting
     issue_category = models.CharField(max_length=255, blank=True, null=True)
     issue_details = models.TextField(blank=True, null=True)
@@ -141,18 +148,11 @@ def create_lead_qualification(sender, instance, created, **kwargs):
     if created:
         LeadQualification.objects.create(prospect=instance)
 
-@receiver(post_save, sender=Prospect)
-def update_lead_qualification_on_edit(sender, instance, created, **kwargs):
-    if not created:
-        try:
-            if instance.lead_qualification.pre_task_status == LeadQualification.PreTaskStatus.ISSUE_SENT_TO_PRE:
-                instance.lead_qualification.pre_task_status = LeadQualification.PreTaskStatus.PRE_UPDATED
-                instance.lead_qualification.save()
-        except LeadQualification.DoesNotExist:
-            pass
+
 
 class CallbackReminder(models.Model):
     prospect = models.ForeignKey(Prospect, on_delete=models.CASCADE, related_name='reminders')
+    prospect_contact = models.ForeignKey(ProspectContact, on_delete=models.CASCADE, null=True, blank=True, related_name='reminders')
     scheduled_datetime = models.DateTimeField()
     description = models.TextField(blank=True, null=True)
     is_completed = models.BooleanField(default=False)
@@ -169,6 +169,7 @@ class CallbackReminder(models.Model):
 
 class Meeting(models.Model):
     prospect = models.ForeignKey(Prospect, on_delete=models.CASCADE, related_name='meetings')
+    prospect_contact = models.ForeignKey(ProspectContact, on_delete=models.CASCADE, null=True, blank=True, related_name='meetings')
     scheduled_datetime = models.DateTimeField()
     meeting_link = models.CharField(max_length=512, blank=True, null=True)
     agenda = models.TextField(blank=True, null=True)
@@ -191,7 +192,9 @@ class OutreachEmail(models.Model):
     from_email = models.CharField(max_length=255)
     from_name = models.CharField(max_length=255, blank=True, null=True)
     subject = models.CharField(max_length=512)
-    body = models.TextField()
+
+
+    body = models.TextField(default='', blank=True)
     signature = models.TextField(blank=True, null=True)
     status = models.CharField(max_length=50, choices=(('NOT SENT', 'Not Sent'), ('SENT', 'Sent'), ('WAITING FOR RESPONSE', 'Waiting for Response'), ('RECEIVED RESPONSE', 'Received Response'), ('FAILED', 'Failed')), default='NOT SENT')
     sent_at = models.DateTimeField(null=True, blank=True)
@@ -200,12 +203,35 @@ class OutreachEmail(models.Model):
     in_reply_to = models.CharField(max_length=255, blank=True, null=True)
     references = models.TextField(blank=True, null=True)
     # Email open tracking
-    tracking_token = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True, editable=False)
+    tracking_token = models.UUIDField(default=uuid.uuid4, db_index=True, editable=False)
     is_opened = models.BooleanField(default=False)
     opened_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+class AuditReverificationRequest(models.Model):
+    class Status(models.TextChoices):
+        PENDING = 'Pending', 'Pending'
+        CORRECTED = 'Corrected', 'Corrected'
+
+    prospect = models.ForeignKey(Prospect, on_delete=models.CASCADE, related_name='reverification_requests')
+    manager = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='reverifications_sent')
+    pre_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='reverifications_received')
+    
+    highlighted_fields = models.JSONField(default=list)
+    manager_notes = models.TextField(blank=True, null=True)
+    
+    status = models.CharField(max_length=50, choices=Status.choices, default=Status.PENDING)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    manager_notified = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Re-Verify {self.prospect.company_name} (Status: {self.status})"
 
 class OutreachEmailRecipient(models.Model):
     outreach_email = models.ForeignKey(OutreachEmail, on_delete=models.CASCADE, related_name='recipients')

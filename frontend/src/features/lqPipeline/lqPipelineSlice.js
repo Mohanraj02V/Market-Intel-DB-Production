@@ -168,13 +168,24 @@ const lqPipelineSlice = createSlice({
     selectedItem: null,
     loading: false,
     error: null,
+    count: 0,
+    page: 1,
+    filters: {},
   },
   reducers: {
     clearSelectedItem: (state) => {
       state.selectedItem = null;
     },
+    setPage: (state, action) => {
+      state.page = action.payload;
+    },
+    setFilters: (state, action) => {
+      state.filters = action.payload;
+      state.page = 1;
+    },
     setCachedList: (state, action) => {
       state.items = action.payload.results || action.payload;
+      state.count = action.payload.count || action.payload.length;
     },
     setCachedDetail: (state, action) => {
       state.selectedItem = action.payload;
@@ -187,6 +198,7 @@ const lqPipelineSlice = createSlice({
       .addCase(fetchLqPipeline.fulfilled, (state, action) => {
         state.loading = false;
         state.items = action.payload.results || action.payload;
+        state.count = action.payload.count || action.payload.length;
       })
       .addCase(fetchLqPipeline.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
       // fetch one
@@ -238,5 +250,5 @@ const lqPipelineSlice = createSlice({
   },
 });
 
-export const { clearSelectedItem } = lqPipelineSlice.actions;
+export const { clearSelectedItem, setPage, setFilters } = lqPipelineSlice.actions;
 export default lqPipelineSlice.reducer;

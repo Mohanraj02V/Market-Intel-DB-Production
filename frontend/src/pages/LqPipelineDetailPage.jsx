@@ -12,6 +12,8 @@ const LqPipelineDetailPage = () => {
   const { id } = useParams();
   const dispatch = useDispatch();
   const { selectedItem: lq, loading, error } = useSelector((state) => state.lqPipeline);
+  const { user } = useSelector((state) => state.auth);
+  const isManager = user?.role === 'MANAGER';
   
   const [showWorkspace, setShowWorkspace] = useState(false);
 
@@ -121,7 +123,7 @@ const LqPipelineDetailPage = () => {
   const hasIssue = lq.pre_task_status === 'ISSUE_SENT_TO_PRE';
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="space-y-6">
       {/* Top Navigation */}
       <div className="flex items-center justify-between">
         <Link 
@@ -130,21 +132,23 @@ const LqPipelineDetailPage = () => {
         >
           <ArrowLeft className="w-4 h-4" /> Back to Pipeline
         </Link>
-        <button
-          onClick={() => openWorkspace(lq)}
-          disabled={isLeadFreeze}
-          className={`px-4 py-2 rounded-lg font-bold text-sm shadow-sm transition flex items-center gap-2 ${
-            isLeadFreeze 
-              ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
-              : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200'
-          }`}
-        >
-          {isLeadFreeze ? (
-            <><XCircle className="w-4 h-4" /> Lead Freeze (Outreach Disabled)</>
-          ) : (
-            <><Target className="w-4 h-4" /> Open Outreach Workspace</>
-          )}
-        </button>
+        {!isManager && (
+          <button
+            onClick={() => openWorkspace(lq)}
+            disabled={isLeadFreeze}
+            className={`px-4 py-2 rounded-lg font-bold text-sm shadow-sm transition flex items-center gap-2 ${
+              isLeadFreeze 
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
+                : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200'
+            }`}
+          >
+            {isLeadFreeze ? (
+              <><XCircle className="w-4 h-4" /> Lead Freeze (Outreach Disabled)</>
+            ) : (
+              <><Target className="w-4 h-4" /> Open Outreach Workspace</>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Header Banner */}
@@ -181,11 +185,11 @@ const LqPipelineDetailPage = () => {
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Qualification Status</span>
             <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 ${
               isLeadQualified ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 
-              isBudgetFrozen ? 'bg-red-50 text-red-700 border-red-200' : 
+              isLeadFreeze ? 'bg-red-50 text-red-700 border-red-200' : 
               'bg-blue-50 text-blue-700 border-blue-200'
             }`}>
               {isLeadQualified && <CheckCircle className="w-3 h-3" />}
-              {isBudgetFrozen && <XCircle className="w-3 h-3" />}
+              {isLeadFreeze && <XCircle className="w-3 h-3" />}
               {lq.qualification_status}
             </span>
           </div>

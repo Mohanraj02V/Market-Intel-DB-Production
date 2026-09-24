@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useDispatch } from 'react-redux';
 import { createUser, updateUser } from '../../features/users/userSlice';
 import { X } from 'lucide-react';
@@ -87,6 +87,7 @@ const UserForm = ({ isOpen, onClose, userToEdit }) => {
               <select name="role" value={formData.role} onChange={handleChange} className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2 bg-white">
                 <option value="PRE">Prospect Research Engineer (PRE)</option>
                 <option value="LQ">Lead Qualifier (LQ)</option>
+                <option value="MANAGER">Manager</option>
               </select>
             </div>
 

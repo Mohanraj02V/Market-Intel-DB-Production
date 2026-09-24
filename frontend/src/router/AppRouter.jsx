@@ -18,6 +18,8 @@ import UserManagementPage from '../pages/UserManagementPage';
 import PreTasksPage from '../pages/PreTasksPage';
 import OutreachActivityDetailPage from '../pages/OutreachActivityDetailPage';
 import LqCalendarPage from '../pages/LqCalendarPage';
+import ManagerDashboardPage from '../pages/ManagerDashboardPage';
+import ManagerAuditPage from '../pages/ManagerAuditPage';
 
 import Layout from '../components/layout/Layout';
 
@@ -27,12 +29,15 @@ const RoleRoute = ({ children, allowedRoles, requireAdmin }) => {
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   
   if (requireAdmin && !user?.is_superuser) {
+    // Manager can access /users (read-only); superuser has full access
+    if (user?.role === 'MANAGER') return children;
     return <Navigate to="/" replace />;
   }
   
-  if (allowedRoles && user && !allowedRoles.includes(user.role)) {
+  if (allowedRoles && user && !allowedRoles.includes(user.role) && !user.is_superuser) {
     // Redirect based on role
     if (user.role === 'LQ') return <Navigate to="/lq-pipeline" replace />;
+    if (user.role === 'MANAGER') return <Navigate to="/manager-dashboard" replace />;
     return <Navigate to="/prospects" replace />;
   }
   
@@ -67,33 +72,59 @@ const AppRouter = () => {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         
-        <Route path="/" element={
-          <RoleRoute allowedRoles={['PRE', 'LQ']}><Layout /></RoleRoute>
+        {/* ── Manager routes ────────────────────────────────── */}
+        <Route path="/manager-dashboard" element={
+          <RoleRoute allowedRoles={['MANAGER']}><Layout /></RoleRoute>
         }>
-          {/* Default Route redirects to dashboard for PRE, lq-pipeline for LQ */}
+          <Route index element={<ManagerDashboardPage />} />
+        </Route>
+
+        {/* ── PRE / LQ / Manager shared routes ─────────────── */}
+        <Route path="/" element={
+          <RoleRoute allowedRoles={['PRE', 'LQ', 'MANAGER']}><Layout /></RoleRoute>
+        }>
+          {/* Default redirect by role */}
           <Route index element={
-            user?.role === 'LQ' ? <Navigate to="/lq-pipeline" replace /> : <Navigate to="/dashboard" replace />
+            user?.role === 'LQ'
+              ? <Navigate to="/lq-pipeline" replace />
+              : user?.role === 'MANAGER'
+              ? <Navigate to="/manager-dashboard" replace />
+              : <Navigate to="/dashboard" replace />
           } />
           
           <Route path="dashboard" element={<RoleRoute allowedRoles={['PRE']}><PreDashboardPage /></RoleRoute>} />
           
-          <Route path="prospects" element={<RoleRoute allowedRoles={['PRE']}><ProspectsPage /></RoleRoute>} />
-          <Route path="prospects/:id" element={<RoleRoute allowedRoles={['PRE']}><ProspectDetailPage /></RoleRoute>} />
-          <Route path="market-events" element={<RoleRoute allowedRoles={['PRE', 'LQ']}><MarketEventsPage /></RoleRoute>} />
-          <Route path="market-events/:id" element={<RoleRoute allowedRoles={['PRE', 'LQ']}><MarketEventDetailPage /></RoleRoute>} />
-          <Route path="pre-tasks" element={<RoleRoute allowedRoles={['PRE']}><PreTasksPage /></RoleRoute>} />
-          <Route path="key-people" element={<RoleRoute allowedRoles={['PRE', 'LQ']}><KeyPeoplePage /></RoleRoute>} />
-          <Route path="key-people/:id" element={<RoleRoute allowedRoles={['PRE', 'LQ']}><KeyPersonDetailPage /></RoleRoute>} />
+          {/* Prospects — PRE full, MANAGER read-only */}
+          <Route path="prospects" element={<RoleRoute allowedRoles={['PRE', 'MANAGER']}><ProspectsPage /></RoleRoute>} />
+          <Route path="prospects/:id" element={<RoleRoute allowedRoles={['PRE', 'MANAGER']}><ProspectDetailPage /></RoleRoute>} />
+
+          {/* Market Events — PRE full, LQ + MANAGER read-only */}
+          <Route path="market-events" element={<RoleRoute allowedRoles={['PRE', 'LQ', 'MANAGER']}><MarketEventsPage /></RoleRoute>} />
+          <Route path="market-events/:id" element={<RoleRoute allowedRoles={['PRE', 'LQ', 'MANAGER']}><MarketEventDetailPage /></RoleRoute>} />
+
+          {/* PRE tasks — PRE full, MANAGER read-only */}
+          <Route path="pre-tasks" element={<RoleRoute allowedRoles={['PRE', 'MANAGER']}><PreTasksPage /></RoleRoute>} />
+
+          {/* Key People — PRE + LQ full, MANAGER read-only */}
+          <Route path="key-people" element={<RoleRoute allowedRoles={['PRE', 'LQ', 'MANAGER']}><KeyPeoplePage /></RoleRoute>} />
+          <Route path="key-people/:id" element={<RoleRoute allowedRoles={['PRE', 'LQ', 'MANAGER']}><KeyPersonDetailPage /></RoleRoute>} />
+
+          {/* User management — Superuser full, MANAGER create+view */}
           <Route path="users" element={<RoleRoute requireAdmin={true}><UserManagementPage /></RoleRoute>} />
-          <Route path="lq-pipeline" element={<RoleRoute allowedRoles={['LQ']}><LqPipelinePage filter="all" /></RoleRoute>} />
-          <Route path="lq-pipeline/pending" element={<RoleRoute allowedRoles={['LQ']}><LqPipelinePage filter="pending" /></RoleRoute>} />
-          <Route path="lq-pipeline/verified" element={<RoleRoute allowedRoles={['LQ']}><LqPipelinePage filter="verified" /></RoleRoute>} />
-          <Route path="lq-pipeline/issued" element={<RoleRoute allowedRoles={['LQ']}><LqPipelinePage filter="issued" /></RoleRoute>} />
-          <Route path="lq-pipeline/:id" element={<RoleRoute allowedRoles={['LQ']}><LqPipelineDetailPage /></RoleRoute>} />
+
+          {/* Manager Audit */}
+          <Route path="manager-audit" element={<RoleRoute allowedRoles={['MANAGER']}><ManagerAuditPage /></RoleRoute>} />
+
+          {/* LQ Pipeline — LQ full, MANAGER read-only */}
+          <Route path="lq-pipeline" element={<RoleRoute allowedRoles={['LQ', 'MANAGER']}><LqPipelinePage filter="all" /></RoleRoute>} />
+          <Route path="lq-pipeline/pending" element={<RoleRoute allowedRoles={['LQ', 'MANAGER']}><LqPipelinePage filter="pending" /></RoleRoute>} />
+          <Route path="lq-pipeline/verified" element={<RoleRoute allowedRoles={['LQ', 'MANAGER']}><LqPipelinePage filter="verified" /></RoleRoute>} />
+          <Route path="lq-pipeline/issued" element={<RoleRoute allowedRoles={['LQ', 'MANAGER']}><LqPipelinePage filter="issued" /></RoleRoute>} />
+          <Route path="lq-pipeline/:id" element={<RoleRoute allowedRoles={['LQ', 'MANAGER']}><LqPipelineDetailPage /></RoleRoute>} />
+
           <Route path="outreach-activity/:prospectId" element={<RoleRoute allowedRoles={['LQ']}><OutreachActivityDetailPage /></RoleRoute>} />
           <Route path="inbox" element={<RoleRoute allowedRoles={['LQ']}><InboxPage /></RoleRoute>} />
           <Route path="calendar" element={<RoleRoute allowedRoles={['LQ']}><LqCalendarPage /></RoleRoute>} />
-
         </Route>
       </Routes>
     </Router>

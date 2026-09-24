@@ -152,6 +152,7 @@ const marketEventSlice = createSlice({
     loading: false,
     error: null,
     count: 0,
+    page: 1,
     search: '',
   },
   reducers: {
@@ -160,6 +161,10 @@ const marketEventSlice = createSlice({
     },
     setSearch: (state, action) => {
       state.search = action.payload;
+      state.page = 1;
+    },
+    setPage: (state, action) => {
+      state.page = action.payload;
     },
     setCachedList: (state, action) => {
       if (action.payload.results !== undefined) {
@@ -234,5 +239,5 @@ const marketEventSlice = createSlice({
   },
 });
 
-export const { clearSelectedMarketEvent, setSearch } = marketEventSlice.actions;
+export const { clearSelectedMarketEvent, setSearch, setPage } = marketEventSlice.actions;
 export default marketEventSlice.reducer;

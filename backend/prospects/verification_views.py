@@ -1,16 +1,30 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
 from django.utils import timezone
 from .models import EmailVerification, Prospect, ProspectContact, LeadQualification
 from .verification_serializers import EmailVerificationSerializer
 from .services import verify_email_engine
-from accounts.permissions import IsLQ, IsPREOrLQ
+from accounts.permissions import IsLQ, IsPREOrLQ, IsManagerOrSuperuser
 
 class EmailVerificationViewSet(viewsets.ModelViewSet):
     queryset = EmailVerification.objects.all()
     serializer_class = EmailVerificationSerializer
     permission_classes = [IsPREOrLQ]
+
+    def get_permissions(self):
+        user = getattr(self.request, 'user', None)
+        is_manager = (
+            user and not user.is_superuser and
+            hasattr(user, 'profile') and
+            getattr(user.profile, 'role', None) == 'MANAGER'
+        )
+        if is_manager:
+            if self.action in ['list', 'retrieve']:
+                return [IsManagerOrSuperuser()]
+            raise PermissionDenied('Managers cannot perform email verification actions.')
+        return [IsPREOrLQ()]
 
     @action(detail=False, methods=['post'], url_path='instant-verify', permission_classes=[IsPREOrLQ])
     def instant_verify(self, request):

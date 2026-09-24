@@ -1,14 +1,18 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchUsers, deleteUser } from '../features/users/userSlice';
 import UserForm from '../components/users/UserForm';
-import { Users, Plus, Edit2, Trash2 } from 'lucide-react';
+import { Users, Plus, Edit2, Trash2, Eye } from 'lucide-react';
 
 const UserManagementPage = () => {
   const dispatch = useDispatch();
   const { items, loading, error } = useSelector((state) => state.users);
+  const { user: currentUser } = useSelector((state) => state.auth);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
+
+  // A Manager can create users but not edit or delete
+  const isManager = currentUser?.role === 'MANAGER' && !currentUser?.is_superuser;
 
   useEffect(() => {
     dispatch(fetchUsers());
@@ -39,7 +43,9 @@ const UserManagementPage = () => {
             User Management
           </h1>
           <p className="mt-2 text-sm text-slate-600">
-            Create, edit, and manage user accounts and their roles (PRE / LQ).
+            {isManager
+              ? 'Create new users. Contact an administrator to edit or delete accounts.'
+              : 'Create, edit, and manage user accounts and their roles (PRE / LQ / MANAGER).'}
           </p>
         </div>
         <div className="mt-4 sm:mt-0">
@@ -96,23 +102,33 @@ const UserManagementPage = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-2 inline-flex text-xs leading-5 font-bold rounded text-white ${
-                        user.role === 'PRE' ? 'bg-indigo-600' : 'bg-emerald-600'
+                        user.role === 'PRE'
+                          ? 'bg-indigo-600'
+                          : user.role === 'MANAGER'
+                          ? 'bg-amber-600'
+                          : user.is_superuser
+                          ? 'bg-slate-700'
+                          : 'bg-emerald-600'
                       }`}>
-                        {user.role}
+                        {user.is_superuser ? 'ADMIN' : user.role}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
                       {user.email || user.username}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex justify-end gap-3 items-center">
-                        <button onClick={() => handleEditClick(user)} className="text-indigo-600 hover:text-indigo-900" title="Edit User">
-                          <Edit2 size={18} />
-                        </button>
-                        <button onClick={() => handleDelete(user.id)} className="text-red-500 hover:text-red-700" title="Delete User">
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
+                      {isManager ? (
+                        <span className="text-xs text-slate-400 italic">View only</span>
+                      ) : (
+                        <div className="flex justify-end gap-3 items-center">
+                          <button onClick={() => handleEditClick(user)} className="text-indigo-600 hover:text-indigo-900" title="Edit User">
+                            <Edit2 size={18} />
+                          </button>
+                          <button onClick={() => handleDelete(user.id)} className="text-red-500 hover:text-red-700" title="Delete User">
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))

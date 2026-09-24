@@ -13,6 +13,18 @@ class IsSuperUser(BasePermission):
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_superuser)
 
+class IsManagerUser(BasePermission):
+    """Allows Manager role."""
+    def has_permission(self, request, view):
+        if request.user and request.user.is_superuser:
+            return True
+        return bool(
+            request.user and
+            request.user.is_authenticated and
+            hasattr(request.user, 'profile') and
+            request.user.profile.role == 'MANAGER'
+        )
+
 class UserMeView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -34,9 +46,71 @@ class UserMeView(APIView):
         })
 
 class UserViewSet(viewsets.ModelViewSet):
-    queryset = User.objects.all().order_by('-date_joined')
+    queryset = User.objects.all().select_related('profile').order_by('-date_joined')
     serializer_class = UserSerializer
-    permission_classes = [IsSuperUser]
+
+    def get_permissions(self):
+        """
+        Superuser: full CRUD.
+        Manager: list, retrieve, create only (non-superuser).
+        Others: 403.
+        """
+        if self.action in ['list', 'retrieve']:
+            # Both superuser and Manager can view
+            return [IsAuthenticated(), IsManagerUser()]
+        elif self.action == 'create':
+            return [IsAuthenticated(), IsManagerUser()]
+        else:
+            # update, partial_update, destroy — superuser only
+            return [IsSuperUser()]
+
+    def create(self, request, *args, **kwargs):
+        # Prevent Manager from creating a superuser
+        user = request.user
+        is_manager = (
+            not user.is_superuser and
+            hasattr(user, 'profile') and
+            user.profile.role == 'MANAGER'
+        )
+        if is_manager:
+            # Block is_superuser or is_staff from Manager-created users
+            if request.data.get('is_superuser') or request.data.get('is_staff'):
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("Managers cannot create superuser or staff accounts.")
+            # Strip those fields from data safely
+            data = request.data.copy()
+            data.pop('is_superuser', None)
+            data.pop('is_staff', None)
+            # Use mutable copy
+            request._full_data = data
+        return super().create(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        # Ensure Manager-created users are never superusers
+        user = self.request.user
+        is_manager = (
+            not user.is_superuser and
+            hasattr(user, 'profile') and
+            user.profile.role == 'MANAGER'
+        )
+        if is_manager:
+            serializer.save(is_superuser=False, is_staff=False)
+        else:
+            serializer.save()
+
+
+class _SuperOrManager(BasePermission):
+    """Allows superuser or Manager role."""
+    def has_permission(self, request, view):
+        if request.user and request.user.is_superuser:
+            return True
+        return bool(
+            request.user and
+            request.user.is_authenticated and
+            hasattr(request.user, 'profile') and
+            request.user.profile.role == 'MANAGER'
+        )
+
 
 from .models import MailAccount
 from .serializers import MailAccountSerializer
@@ -55,6 +129,7 @@ class IsLQ(IsLQPerm):
     pass
 
 class MailAccountViewSet(viewsets.ModelViewSet):
+
 
     @action(detail=False, methods=['get'], url_path='fetch-emails')
     def fetch_emails(self, request):
