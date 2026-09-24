@@ -61,6 +61,11 @@ class UserAdmin(BaseUserAdmin):
         if obj is None:
             kwargs['form'] = CustomUserCreationForm
         return super().get_form(request, obj, **kwargs)
+
+    def get_inline_instances(self, request, obj=None):
+        if not obj:
+            return []
+        return super().get_inline_instances(request, obj)
         
     def get_fieldsets(self, request, obj=None):
         if not obj:
