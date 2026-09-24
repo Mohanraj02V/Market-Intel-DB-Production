@@ -111,7 +111,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='outreachemail',
             name='tracking_token',
-            field=models.UUIDField(db_index=True, default=uuid.uuid4, editable=False, unique=True),
+            field=models.UUIDField(db_index=True, default=uuid.uuid4, editable=False),
         ),
         migrations.AddField(
             model_name='outreachemail',
