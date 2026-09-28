@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import SearchableSelect from '../common/SearchableSelect';
-import { LogOut, Users, Calendar, Activity, ClipboardList, UserCircle, Mail, LayoutDashboard, Shield, BarChart2, Eye, Settings, X } from 'lucide-react';
+import { LogOut, Users, Calendar, Activity, ClipboardList, UserCircle, Mail, LayoutDashboard, Shield, BarChart2, Eye, Settings, X, MessageCircle } from 'lucide-react';
 import { logout, loginSuccess } from '../../features/auth/authSlice';
 import api from '../../services/api';
 import NotificationCenter from './NotificationCenter';
@@ -64,7 +64,8 @@ const Layout = () => {
       { path: '/calendar', label: 'Calendar', icon: Calendar },
       { path: '/key-people', label: 'Key People', icon: UserCircle },
       { path: '/market-events', label: 'Market Events', icon: Calendar },
-      { path: '/inbox', label: 'Inbox', icon: Mail, badge: unreadCount > 0 ? unreadCount : null }
+      { path: '/inbox', label: 'Inbox', icon: Mail, badge: unreadCount > 0 ? unreadCount : null },
+      { path: '/whatsapp', label: 'WhatsApp', icon: MessageCircle }
     );
   } else if (user?.role === 'MANAGER') {
     navItems.push(

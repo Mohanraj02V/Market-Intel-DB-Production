@@ -20,6 +20,7 @@ import OutreachActivityDetailPage from '../pages/OutreachActivityDetailPage';
 import LqCalendarPage from '../pages/LqCalendarPage';
 import ManagerDashboardPage from '../pages/ManagerDashboardPage';
 import ManagerAuditPage from '../pages/ManagerAuditPage';
+import WhatsappPage from '../pages/WhatsappPage';
 
 import Layout from '../components/layout/Layout';
 
@@ -125,6 +126,7 @@ const AppRouter = () => {
           <Route path="outreach-activity/:prospectId" element={<RoleRoute allowedRoles={['LQ']}><OutreachActivityDetailPage /></RoleRoute>} />
           <Route path="inbox" element={<RoleRoute allowedRoles={['LQ']}><InboxPage /></RoleRoute>} />
           <Route path="calendar" element={<RoleRoute allowedRoles={['LQ']}><LqCalendarPage /></RoleRoute>} />
+          <Route path="whatsapp" element={<RoleRoute allowedRoles={['LQ']}><WhatsappPage /></RoleRoute>} />
         </Route>
       </Routes>
     </Router>

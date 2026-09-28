@@ -381,6 +381,8 @@ class MailAccountViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_200_OK)
 
         except Exception as e:
+            if isinstance(e, ValueError) and "Decryption failed" in str(e):
+                return Response({'error': str(e)}, status=status.HTTP_200_OK)
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         finally:
             if mail is not None:
@@ -559,6 +561,8 @@ class MailAccountViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_200_OK)
 
         except Exception as e:
+            if isinstance(e, ValueError) and "Decryption failed" in str(e):
+                return Response({'error': str(e)}, status=status.HTTP_200_OK)
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         finally:
             if mail_conn is not None:
@@ -600,7 +604,7 @@ class MailAccountViewSet(viewsets.ModelViewSet):
         if not mail_account:
             return Response(
                 {'error': 'No active mail account configured.'},
-                status=status.HTTP_400_BAD_REQUEST,
+                status=status.HTTP_200_OK,
             )
 
         folder = request.query_params.get('folder', 'INBOX')
@@ -629,7 +633,7 @@ class MailAccountViewSet(viewsets.ModelViewSet):
             if status_res != 'OK' or not status_data:
                 return Response(
                     {'error': f'Failed to get status for folder {folder}'},
-                    status=status.HTTP_400_BAD_REQUEST,
+                    status=status.HTTP_200_OK,
                 )
 
             status_str = status_data[0].decode() if isinstance(status_data[0], bytes) else str(status_data[0])
@@ -746,7 +750,11 @@ class MailAccountViewSet(viewsets.ModelViewSet):
             return Response(response_data, status=status.HTTP_200_OK)
 
         except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            if isinstance(e, ValueError) and "Decryption failed" in str(e):
+                return Response({'error': str(e)}, status=status.HTTP_200_OK)
+            import traceback
+            traceback.print_exc()
+            return Response({'error': str(e)}, status=status.HTTP_200_OK)
         finally:
             if mail is not None:
                 try:

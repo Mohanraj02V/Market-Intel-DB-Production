@@ -21,5 +21,8 @@ def decrypt_password(encrypted_password: str) -> str:
         return ''
     key = get_encryption_key()
     f = Fernet(key)
-    decrypted_bytes = f.decrypt(encrypted_password.encode('utf-8'))
-    return decrypted_bytes.decode('utf-8')
+    try:
+        decrypted_bytes = f.decrypt(encrypted_password.encode('utf-8'))
+        return decrypted_bytes.decode('utf-8')
+    except Exception:
+        raise ValueError("Decryption failed. The MAIL_CREDENTIALS_ENCRYPTION_KEY may have changed.")

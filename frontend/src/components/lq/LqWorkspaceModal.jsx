@@ -859,17 +859,17 @@ const handleAddCustomRecipient = (e) => {
                     <AlertTriangle className="w-4 h-4" /> Submit Issue to PRE
                   </button>
                 ) : allCorrect ? (
-                  <button onClick={() => { 
+                  <button onClick={async () => { 
                     if (isConfirmingFixes) {
-                      dispatch(confirmReverification(selectedLq.id));
+                      await dispatch(confirmReverification(selectedLq.id));
                     }
                     if (!localVerified) {
-                      handleReadyForOutreach(true); 
+                      await handleReadyForOutreach(true); 
                       setLocalVerified(true);
                     }
                     setActiveTab('outreach'); 
                   }} className="px-5 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition shadow-sm flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4" /> {isConfirmingFixes || localVerified ? 'Move back to Outreach' : 'Ready for Outreach'}
+                    <CheckCircle className="w-4 h-4" /> {(selectedLq?.verification_status === 'Verified' || localVerified) ? 'Move back to Outreach' : 'Ready for Outreach'}
                   </button>
                 ) : (
                   <button disabled className="px-5 py-2 text-sm font-bold text-slate-400 bg-slate-100 rounded-lg cursor-not-allowed">

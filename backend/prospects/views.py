@@ -25,16 +25,17 @@ def apply_lq_distribution_filter(queryset, user, prospect_field_prefix=''):
     lq_users = list(User.objects.filter(profile__role='LQ', is_superuser=False).order_by('id').values_list('id', flat=True))
     
     if user.id in lq_users:
-        N = len(lq_users)
-        current_index = lq_users.index(user.id)
-        query = f"""
-            SELECT id FROM (
-                SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC, id ASC) - 1 as row_num
-                FROM prospects_prospect
-            ) as subquery
-            WHERE MOD(CAST(FLOOR(row_num / 5) AS INTEGER), {N}) = {current_index}
-        """
-        filter_kwargs = {f"{prospect_field_prefix}in": RawSQL(query, [])}
+        from prospects.models import LeadQualification, Prospect
+        
+        if queryset.model == LeadQualification:
+            filter_kwargs = {'assigned_lq': user}
+        elif queryset.model == Prospect:
+            filter_kwargs = {'lead_qualification__assigned_lq': user}
+        else:
+            # For Meeting, CallbackReminder, OutreachEmail, etc.
+            # All these have a 'prospect' ForeignKey
+            filter_kwargs = {'prospect__lead_qualification__assigned_lq': user}
+            
         return queryset.filter(**filter_kwargs)
     return queryset.none()
 
@@ -74,7 +75,16 @@ class ProspectViewSet(viewsets.ModelViewSet):
     ordering_fields = ['company_name', 'created_at', 'updated_at']
 
     def get_queryset(self):
-        queryset = Prospect.objects.all().order_by('-updated_at')
+        queryset = Prospect.objects.all().prefetch_related(
+            'email_verifications',
+            'market_event_participations__market_event',
+            'offerings',
+            'key_contacts',
+            'parent_companies',
+            'child_companies',
+            'reverification_requests',
+            'lead_qualification'
+        ).order_by('-updated_at')
 
         # Role-based filtering
         user = self.request.user
@@ -216,7 +226,28 @@ class LQPipelineViewSet(viewsets.ModelViewSet):
         return [IsPREOrLQ()]
 
     def get_queryset(self):
-        queryset = LeadQualification.objects.all().select_related('prospect').order_by('-updated_at')
+        from django.db.models import Count, Q
+        queryset = LeadQualification.objects.all().select_related('prospect').prefetch_related(
+            'prospect__email_verifications',
+            'prospect__market_event_participations__market_event',
+            'prospect__offerings',
+            'prospect__key_contacts',
+            'prospect__parent_companies',
+            'prospect__child_companies',
+            'prospect__reverification_requests',
+            'prospect__lead_qualification'
+        ).annotate(
+            emails_sent_annotated=Count(
+                'prospect__communication_timeline',
+                filter=Q(prospect__communication_timeline__activity_type='EMAIL_SENT'),
+                distinct=True
+            ),
+            calls_logged_annotated=Count(
+                'prospect__communication_timeline',
+                filter=Q(prospect__communication_timeline__activity_type='CALL'),
+                distinct=True
+            )
+        ).order_by('-updated_at')
         user = self.request.user
         if not user.is_superuser and hasattr(user, 'profile'):
             role = user.profile.role
@@ -361,14 +392,14 @@ class LQPipelineViewSet(viewsets.ModelViewSet):
     def complete_pre_task(self, request, pk=None):
         lq = self.get_object()
         lq.pre_task_status = LeadQualification.PreTaskStatus.PRE_UPDATED
-        lq.save()
+        lq.save(update_fields=['pre_task_status'])
         return Response(self.get_serializer(lq).data)
 
     @action(detail=True, methods=['post'], url_path='confirm-reverification')
     def confirm_reverification(self, request, pk=None):
         lq = self.get_object()
         lq.pre_task_status = LeadQualification.PreTaskStatus.NONE
-        lq.save()
+        lq.save(update_fields=['pre_task_status'])
         return Response(self.get_serializer(lq).data)
 
     @action(detail=True, methods=['post'], url_path='verify')
@@ -376,7 +407,7 @@ class LQPipelineViewSet(viewsets.ModelViewSet):
         lq = self.get_object()
         lq.verification_status = request.data.get('verification_status', lq.verification_status)
         lq.verification_checklist = request.data.get('verification_checklist', lq.verification_checklist)
-        lq.save()
+        lq.save(update_fields=['verification_status', 'verification_checklist'])
         return Response(self.get_serializer(lq).data)
 
     @action(detail=True, methods=['post'], url_path='qualification')
@@ -529,7 +560,10 @@ class ProspectContactViewSet(viewsets.ModelViewSet):
             raise PermissionDenied('Managers cannot modify key contacts.')
         return [IsPREOrLQ()]
     def get_queryset(self):
-        queryset = ProspectContact.objects.all().select_related('prospect').order_by('-created_at')
+        queryset = ProspectContact.objects.all().select_related('prospect').prefetch_related(
+            'call_activities',
+            'prospect__email_verifications'
+        ).order_by('-created_at')
         user = self.request.user
         if not user.is_superuser and hasattr(user, 'profile'):
             if user.profile.role == 'PRE':

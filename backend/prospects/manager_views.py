@@ -111,17 +111,11 @@ def _get_lq_received_on_date(lq_user_id, day_start, day_end, assignment_map):
 
 def _stable_sample(prospect_ids, reporting_date, lq_user_id, n=10):
     """
-    Sort prospect_ids by SHA-256(date:lq_user_id:prospect_id) and take first n.
-    Same date + LQ always returns the same sample.
+    Returns the first n records created/assigned on this day for the user.
+    Sorting by id guarantees chronological order, so the list never shifts
+    even if new records are added later in the day.
     """
-    date_str = reporting_date.isoformat()
-    scored = []
-    for pid in prospect_ids:
-        key = f"{date_str}:{lq_user_id}:{pid}"
-        score = hashlib.sha256(key.encode()).hexdigest()
-        scored.append((score, pid))
-    scored.sort(key=lambda x: x[0])
-    return [pid for _, pid in scored[:n]]
+    return sorted(prospect_ids)[:n]
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -290,6 +284,25 @@ def manager_dashboard(request):
         if sample_ids:
             prospects_qs = Prospect.objects.filter(id__in=sample_ids).select_related(
                 'lead_qualification'
+            ).prefetch_related(
+                'email_verifications',
+                'market_event_participations__market_event',
+                'offerings',
+                'key_contacts',
+                'parent_companies',
+                'child_companies',
+                'reverification_requests'
+            ).annotate(
+                emails_sent_annotated=Count(
+                    'communication_timeline',
+                    filter=Q(communication_timeline__activity_type='EMAIL_SENT'),
+                    distinct=True
+                ),
+                calls_logged_annotated=Count(
+                    'communication_timeline',
+                    filter=Q(communication_timeline__activity_type='CALL'),
+                    distinct=True
+                )
             )
             p_dict = {str(p.id): p for p in prospects_qs}
             for pid in sample_ids:
@@ -314,7 +327,26 @@ def manager_dashboard(request):
         if sample_ids:
             prospects_qs = Prospect.objects.filter(id__in=sample_ids).select_related(
                 'lead_qualification'
-            ).prefetch_related('email_verifications')
+            ).prefetch_related(
+                'email_verifications',
+                'market_event_participations__market_event',
+                'offerings',
+                'key_contacts',
+                'parent_companies',
+                'child_companies',
+                'reverification_requests'
+            ).annotate(
+                emails_sent_annotated=Count(
+                    'communication_timeline',
+                    filter=Q(communication_timeline__activity_type='EMAIL_SENT'),
+                    distinct=True
+                ),
+                calls_logged_annotated=Count(
+                    'communication_timeline',
+                    filter=Q(communication_timeline__activity_type='CALL'),
+                    distinct=True
+                )
+            )
             # Build dict to preserve stable order
             p_dict = {str(p.id): p for p in prospects_qs}
             for pid in sample_ids:

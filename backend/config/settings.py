@@ -14,7 +14,7 @@ DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
 
 ALLOWED_HOSTS = [
     h.strip()
-    for h in os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost').split(',')
+    for h in os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost,host.docker.internal').split(',')
     if h.strip()
 ] + ['.trycloudflare.com']
 
@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'companies',
     'prospects',
     'market_events',
+    'whatsapp',
 ]
 
 # ── Middleware ─────────────────────────────────────────────────────────────────
@@ -81,10 +82,13 @@ if _database_url:
     DATABASES = {
         'default': dj_database_url.config(
             default=_database_url,
-            conn_max_age=600,
+            conn_max_age=0,
             conn_health_checks=True,
         )
     }
+    DATABASES['default']['OPTIONS'] = {'sslmode': 'require'}
+    if '6543' in _database_url:
+        DATABASES['default']['DISABLE_SERVER_SIDE_CURSORS'] = True
 else:
     DATABASES = {
         'default': {
@@ -94,6 +98,8 @@ else:
             'PASSWORD': os.environ.get('DB_PASSWORD', ''),
             'HOST': os.environ.get('DB_HOST', 'localhost'),
             'PORT': os.environ.get('DB_PORT', '5432'),
+            'CONN_MAX_AGE': 0,
+            'CONN_HEALTH_CHECKS': True,
         }
     }
 
@@ -114,6 +120,9 @@ USE_TZ = True
 # ── Static files ──────────────────────────────────────────────────────────────
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -187,3 +196,6 @@ if os.getenv('USE_OBJECT_STORAGE', 'false').lower() == 'true':
 # Override via MANAGER_REPORT_TIMEZONE env var (e.g., 'Asia/Kolkata').
 # Defaults to Django's TIME_ZONE so the reporting boundary is consistent.
 MANAGER_REPORT_TIMEZONE = os.getenv('MANAGER_REPORT_TIMEZONE', TIME_ZONE)
+
+
+

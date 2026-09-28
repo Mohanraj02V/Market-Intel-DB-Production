@@ -13,7 +13,7 @@ import {
 } from '../../services/cache/cacheKeys';
 
 const RESOURCE = 'lq-pipeline';
-const STALE_TIME_MS = 15000; // 15 seconds
+const STALE_TIME_MS = 0; // Always re-fetch from backend to ensure new prospects appear instantly
 
 function getUserId(thunkAPI) {
   return thunkAPI.getState().auth?.user?.id;
@@ -31,15 +31,16 @@ export const fetchLqPipeline = createAsyncThunk(
     const userId = getUserId(thunkAPI);
     const cacheKey = listCacheKey(userId, RESOURCE, filters);
 
-    if (userId) {
-      const record = await getCachedRecord(cacheKey);
-      if (record) {
-        thunkAPI.dispatch({ type: 'lqPipeline/setCachedList', payload: record.data });
-        if (Date.now() - record.cachedAt < STALE_TIME_MS) {
-          return record.data; // Cache is fresh, skip background fetch
-        }
-      }
-    }
+    // Temporarily bypass cache reading to guarantee fresh data on every load
+    // if (userId) {
+    //   const record = await getCachedRecord(cacheKey);
+    //   if (record) {
+    //     thunkAPI.dispatch({ type: 'lqPipeline/setCachedList', payload: record.data });
+    //     if (Date.now() - record.cachedAt < STALE_TIME_MS) {
+    //       return record.data; // Cache is fresh, skip background fetch
+    //     }
+    //   }
+    // }
 
     try {
       const response = await api.get('/lq-pipeline/', { params: filters });

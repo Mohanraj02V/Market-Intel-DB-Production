@@ -116,6 +116,8 @@ class LeadQualification(models.Model):
     qualification_score = models.IntegerField(default=0)
     lq_notes = models.TextField(blank=True, null=True)
 
+    assigned_lq = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_prospects')
+
     qualified_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='qualifications_performed')
     qualified_at = models.DateTimeField(null=True, blank=True)
 
@@ -143,10 +145,7 @@ class LeadQualification(models.Model):
     def __str__(self):
         return f"LQ for {self.prospect.company_name}"
 
-@receiver(post_save, sender=Prospect)
-def create_lead_qualification(sender, instance, created, **kwargs):
-    if created:
-        LeadQualification.objects.create(prospect=instance)
+
 
 
 

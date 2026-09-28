@@ -16,20 +16,32 @@ class ProspectContactSerializer(serializers.ModelSerializer):
     email_verification_id = serializers.SerializerMethodField()
 
     def get_latest_call_status(self, obj):
-        latest = obj.call_activities.order_by('-created_at').first()
-        return latest.call_status if latest else None
+        activities = list(obj.call_activities.all())
+        if activities:
+            activities.sort(key=lambda x: x.created_at, reverse=True)
+            return activities[0].call_status
+        return None
 
     def get_latest_communication_outcome(self, obj):
-        latest = obj.call_activities.order_by('-created_at').first()
-        return latest.communication_outcome if latest else None
+        activities = list(obj.call_activities.all())
+        if activities:
+            activities.sort(key=lambda x: x.created_at, reverse=True)
+            return activities[0].communication_outcome
+        return None
 
     def get_email_verification_status(self, obj):
-        verification = obj.prospect.email_verifications.filter(email_address=obj.official_email).order_by('-updated_at').first()
-        return verification.verification_status if verification else None
+        verifications = [v for v in obj.prospect.email_verifications.all() if v.email_address == obj.official_email]
+        if verifications:
+            verifications.sort(key=lambda x: x.updated_at, reverse=True)
+            return verifications[0].verification_status
+        return None
 
     def get_email_verification_id(self, obj):
-        verification = obj.prospect.email_verifications.filter(email_address=obj.official_email).order_by('-updated_at').first()
-        return str(verification.id) if verification else None
+        verifications = [v for v in obj.prospect.email_verifications.all() if v.email_address == obj.official_email]
+        if verifications:
+            verifications.sort(key=lambda x: x.updated_at, reverse=True)
+            return str(verifications[0].id)
+        return None
 
     class Meta:
         model = ProspectContact
@@ -71,8 +83,10 @@ class ProspectSerializer(serializers.ModelSerializer):
 
     def get_audit_reverify_fields(self, obj):
         if hasattr(obj, 'reverification_requests'):
-            latest = obj.reverification_requests.filter(status='Pending').order_by('-created_at').first()
-            return latest.highlighted_fields if latest else []
+            requests = [r for r in obj.reverification_requests.all() if r.status == 'Pending']
+            if requests:
+                requests.sort(key=lambda x: x.created_at, reverse=True)
+                return requests[0].highlighted_fields
         return []
 
     # Internal writes for nested relationships
@@ -94,23 +108,26 @@ class ProspectSerializer(serializers.ModelSerializer):
     def get_company_email_verification_status(self, obj):
         if not obj.official_email_address:
             return None
-        verification = obj.email_verifications.filter(email_address=obj.official_email_address).order_by('-updated_at').first()
-        return verification.verification_status if verification else None
+        verifications = [v for v in obj.email_verifications.all() if v.email_address == obj.official_email_address]
+        if verifications:
+            verifications.sort(key=lambda x: x.updated_at, reverse=True)
+            return verifications[0].verification_status
+        return None
 
     def get_market_events(self, obj):
         events = [p.market_event for p in obj.market_event_participations.select_related('market_event')]
         return MarketEventSimpleSerializer(events, many=True).data
 
     def get_products(self, obj):
-        offerings = obj.offerings.filter(offering_type=ProspectOffering.OfferingTypeChoice.PRODUCT)
+        offerings = [o for o in obj.offerings.all() if o.offering_type == ProspectOffering.OfferingTypeChoice.PRODUCT]
         return ProspectOfferingSerializer(offerings, many=True).data
 
     def get_services(self, obj):
-        offerings = obj.offerings.filter(offering_type=ProspectOffering.OfferingTypeChoice.SERVICE)
+        offerings = [o for o in obj.offerings.all() if o.offering_type == ProspectOffering.OfferingTypeChoice.SERVICE]
         return ProspectOfferingSerializer(offerings, many=True).data
 
     def get_solutions(self, obj):
-        offerings = obj.offerings.filter(offering_type=ProspectOffering.OfferingTypeChoice.SOLUTION)
+        offerings = [o for o in obj.offerings.all() if o.offering_type == ProspectOffering.OfferingTypeChoice.SOLUTION]
         return ProspectOfferingSerializer(offerings, many=True).data
 
     def validate(self, data):
@@ -163,6 +180,19 @@ class ProspectSerializer(serializers.ModelSerializer):
 
         for contact in contacts_data:
             ProspectContact.objects.create(prospect=prospect, **contact)
+
+        # Create and assign LeadQualification
+        from prospects.models import LeadQualification
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        lq = LeadQualification(prospect=prospect)
+        lq_users = list(User.objects.filter(profile__role='LQ', is_superuser=False).order_by('id'))
+        if lq_users:
+            N = len(lq_users)
+            count = Prospect.objects.filter(created_at__lt=prospect.created_at).count()
+            current_index = (count // 5) % N
+            lq.assigned_lq = lq_users[current_index]
+        lq.save()
 
         return prospect
 
@@ -239,10 +269,14 @@ class LeadQualificationSerializer(serializers.ModelSerializer):
     calls_logged_count = serializers.SerializerMethodField()
 
     def get_emails_sent_count(self, obj):
+        if hasattr(obj, 'emails_sent_annotated'):
+            return obj.emails_sent_annotated
         from .models import CommunicationActivity
         return CommunicationActivity.objects.filter(prospect=obj.prospect, activity_type='EMAIL_SENT').count()
 
     def get_calls_logged_count(self, obj):
+        if hasattr(obj, 'calls_logged_annotated'):
+            return obj.calls_logged_annotated
         from .models import CommunicationActivity
         return CommunicationActivity.objects.filter(prospect=obj.prospect, activity_type='CALL').count()
 
@@ -277,9 +311,9 @@ class CallbackReminderSerializer(serializers.ModelSerializer):
     def get_key_person_name(self, obj):
         if hasattr(obj, 'prospect_contact') and obj.prospect_contact:
             return obj.prospect_contact.contact_name
-        first_contact = obj.prospect.key_contacts.first()
-        if first_contact:
-            return first_contact.contact_name
+        contacts = list(obj.prospect.key_contacts.all())
+        if contacts:
+            return contacts[0].contact_name
         return None
 
 from .models import Meeting
@@ -301,9 +335,9 @@ class MeetingSerializer(serializers.ModelSerializer):
     def get_key_person_name(self, obj):
         if hasattr(obj, 'prospect_contact') and obj.prospect_contact:
             return obj.prospect_contact.contact_name
-        first_contact = obj.prospect.key_contacts.first()
-        if first_contact:
-            return first_contact.contact_name
+        contacts = list(obj.prospect.key_contacts.all())
+        if contacts:
+            return contacts[0].contact_name
         return None
 
 from .models import OutreachEmail, OutreachEmailRecipient, EmailAttachment, CallActivity, CommunicationActivity
