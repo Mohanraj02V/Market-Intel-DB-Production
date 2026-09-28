@@ -181,18 +181,14 @@ class ProspectSerializer(serializers.ModelSerializer):
         for contact in contacts_data:
             ProspectContact.objects.create(prospect=prospect, **contact)
 
-        # Create and assign LeadQualification
-        from prospects.models import LeadQualification
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-        lq = LeadQualification(prospect=prospect)
-        lq_users = list(User.objects.filter(profile__role='LQ', is_superuser=False).order_by('id'))
-        if lq_users:
-            N = len(lq_users)
-            count = Prospect.objects.filter(created_at__lt=prospect.created_at).count()
-            current_index = (count // 5) % N
-            lq.assigned_lq = lq_users[current_index]
-        lq.save()
+        # Always assign an LQ user immediately after creation.
+        # This runs at the serializer level — the deepest possible hook —
+        # so it works regardless of view, signal, or server state.
+        try:
+            from .models import assign_lq_to_prospect
+            assign_lq_to_prospect(prospect)
+        except Exception as e:
+            print(f"[ProspectSerializer.create] LQ assignment error: {e}")
 
         return prospect
 

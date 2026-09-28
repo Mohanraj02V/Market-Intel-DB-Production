@@ -69,6 +69,12 @@ const LqPipelinePage = ({ filter = 'all' }) => {
     api.get('/outreach/communications/')
        .then(res => setGlobalLogs(res.data.results || res.data))
        .catch(err => console.error('Failed to load global communications', err));
+
+    // Auto-refresh every 30 seconds so new prospect assignments appear without manual refresh
+    const interval = setInterval(() => {
+      dispatch(fetchLqPipeline({ page }));
+    }, 30000);
+    return () => clearInterval(interval);
   }, [dispatch, page]);
 
   const sortedGlobalLogs = [...globalLogs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));

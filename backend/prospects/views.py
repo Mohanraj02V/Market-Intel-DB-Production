@@ -174,7 +174,20 @@ class ProspectViewSet(viewsets.ModelViewSet):
         return Response(AuditReverificationRequestSerializer(req).data, status=status.HTTP_201_CREATED)
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user.username)
+        prospect = serializer.save(created_by=self.request.user.username)
+        # Always call assign_lq_to_prospect after creation to guarantee assignment.
+        # This runs AFTER the post_save signal, so if the signal already assigned,
+        # this is a harmless idempotent re-assignment of the same user.
+        # If the signal failed or ran with stale code, this ensures assignment.
+        try:
+            from .models import assign_lq_to_prospect
+            assigned = assign_lq_to_prospect(prospect)
+            if assigned:
+                print(f"[perform_create] Assigned '{prospect.company_name}' to LQ: {assigned.username}")
+            else:
+                print(f"[perform_create] WARNING: No LQ users found, could not assign '{prospect.company_name}'")
+        except Exception as e:
+            print(f"[perform_create] LQ assignment error: {e}")
 
     @action(detail=True, methods=['post'], url_path='add-contact')
     def add_contact(self, request, pk=None):
