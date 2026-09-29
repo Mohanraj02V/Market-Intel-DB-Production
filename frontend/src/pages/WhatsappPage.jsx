@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, MoreVertical, Paperclip, Smile, Send, Phone, Video, RefreshCw } from 'lucide-react';
 import api from '../services/api';
 
+const API_BASE = api.defaults.baseURL;
+const HOST_URL = API_BASE.endsWith('/api') ? API_BASE.slice(0, -4) : API_BASE;
+
 export default function WhatsappPage() {
   const [chats, setChats] = useState([]);
   const [selectedChat, setSelectedChat] = useState(null);
@@ -19,7 +22,7 @@ export default function WhatsappPage() {
   useEffect(() => {
     if (selectedChat) {
       setWahaContact(null);
-      fetch("http://localhost:8000/api/whatsapp/contact-info/" + selectedChat.chat_id + "/")
+      fetch(API_BASE + "/whatsapp/contact-info/" + selectedChat.chat_id + "/")
         .then(r => r.json())
         .then(data => {
             if (data.phoneNumber) {
@@ -302,7 +305,7 @@ export default function WhatsappPage() {
               >
                 <div className="w-12 h-12 rounded-full bg-blue-100 flex-shrink-0 flex items-center justify-center text-blue-600 font-bold overflow-hidden relative">
                   <img
-                    src={"http://localhost:8000/api/whatsapp/profile-pic/" + chat.chat_id + "/"}
+                    src={API_BASE + "/whatsapp/profile-pic/" + chat.chat_id + "/"}
                     className="w-full h-full object-cover absolute inset-0 z-10"
                     onError={(e) => e.target.style.display = 'none'}
                     alt=""
@@ -342,7 +345,7 @@ export default function WhatsappPage() {
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold overflow-hidden relative">
                   <img
-                    src={"http://localhost:8000/api/whatsapp/profile-pic/" + selectedChat.chat_id + "/"}
+                    src={API_BASE + "/whatsapp/profile-pic/" + selectedChat.chat_id + "/"}
                     className="w-full h-full object-cover absolute inset-0 z-10"
                     onError={(e) => e.target.style.display = 'none'}
                     alt=""
@@ -398,9 +401,9 @@ export default function WhatsappPage() {
                   let _proxySrc = '';
                   if (_rawMediaSrc) {
                     if (_rawMediaSrc.includes('localhost:3000')) {
-                      _proxySrc = 'http://localhost:8000/api/whatsapp/media-proxy/?url=' + encodeURIComponent(_rawMediaSrc);
+                      _proxySrc = API_BASE + '/whatsapp/media-proxy/?url=' + encodeURIComponent(_rawMediaSrc);
                     } else if (_rawMediaSrc.startsWith('/')) {
-                      _proxySrc = 'http://localhost:8000' + _rawMediaSrc;
+                      _proxySrc = HOST_URL + _rawMediaSrc;
                     } else {
                       _proxySrc = _rawMediaSrc;
                     }
@@ -567,7 +570,7 @@ export default function WhatsappPage() {
           
           <div className="p-6 flex flex-col items-center border-b border-slate-100">
             <div className="w-32 h-32 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-4xl mb-4 overflow-hidden relative shadow-sm">
-              <img src={"http://localhost:8000/api/whatsapp/profile-pic/" + (wahaContact && wahaContact.id ? wahaContact.id : selectedChat.chat_id) + "/"} className="w-full h-full object-cover relative z-10" onError={(e) => e.target.style.display = 'none'} />
+              <img src={API_BASE + "/whatsapp/profile-pic/" + (wahaContact && wahaContact.id ? wahaContact.id : selectedChat.chat_id) + "/"} className="w-full h-full object-cover relative z-10" onError={(e) => e.target.style.display = 'none'} />
               <span className="absolute inset-0 flex items-center justify-center">{selectedChat.contact_name ? selectedChat.contact_name.charAt(0) : '#'}</span>
             </div>
             <h3 className="text-xl font-bold text-slate-800 text-center">{(wahaContact && wahaContact.pushname) ? wahaContact.pushname : (selectedChat.contact_name || "Unknown Contact")}</h3>
