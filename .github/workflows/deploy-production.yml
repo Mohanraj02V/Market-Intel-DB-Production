@@ -48,7 +48,7 @@ jobs:
       - name: Build and push Docker image
         env:
           ECR_REGISTRY: 404571418561.dkr.ecr.ap-south-1.amazonaws.com
-          IMAGE_TAG: ${{ github.sha }}
+          IMAGE_TAG: ${{ github.sha }}-${{ github.run_attempt }}
         run: |
           docker build \
             -f deploy/aws/backend.Dockerfile \
@@ -61,7 +61,7 @@ jobs:
       - name: Deploy to EC2
         id: deploy
         env:
-          IMAGE_URI: 404571418561.dkr.ecr.ap-south-1.amazonaws.com/marketintel-backend:${{ github.sha }}
+          IMAGE_URI: 404571418561.dkr.ecr.ap-south-1.amazonaws.com/marketintel-backend:${{ github.sha }}-${{ github.run_attempt }}
         run: |
           COMMAND_ID=$(aws ssm send-command \
             --region "$AWS_REGION" \
