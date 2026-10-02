@@ -1,0 +1,27 @@
+services:
+  api:
+    image: ${API_IMAGE}
+    container_name: marketintel-api
+    restart: unless-stopped
+
+    env_file:
+      - /opt/marketintel/.env
+
+    ports:
+      - "127.0.0.1:8000:8000"
+
+    volumes:
+      - /opt/marketintel/staticfiles:/app/staticfiles
+
+    init: true
+
+    stop_grace_period: 30s
+
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
