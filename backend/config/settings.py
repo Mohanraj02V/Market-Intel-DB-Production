@@ -4,7 +4,7 @@ import os
 from dotenv import load_dotenv
 import dj_database_url
 
-load_dotenv()
+load_dotenv(override=True)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'django_filters',
     'storages',
@@ -139,6 +140,12 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    # Rotate refresh tokens on each use — old tokens become invalid.
+    'ROTATE_REFRESH_TOKENS': True,
+    # Blacklist old refresh tokens after rotation to prevent reuse.
+    'BLACKLIST_AFTER_ROTATION': True,
+    # Update the last login timestamp on token issue.
+    'UPDATE_LAST_LOGIN': True,
 }
 
 # ── CORS ──────────────────────────────────────────────────────────────────────

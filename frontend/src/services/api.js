@@ -61,6 +61,8 @@ api.interceptors.response.use(
             refresh: refreshToken
           });
           
+          // The server may return a new refresh token (ROTATE_REFRESH_TOKENS=True).
+          // Pass the full response.data so authSlice can update both tokens.
           store.dispatch(tokenRefreshed(response.data));
           
           const newToken = response.data.access;

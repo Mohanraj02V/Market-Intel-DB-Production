@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import SearchableSelect from '../common/SearchableSelect';
 import { LogOut, Users, Calendar, Activity, ClipboardList, UserCircle, Mail, LayoutDashboard, Shield, BarChart2, Eye, Settings, X, MessageCircle } from 'lucide-react';
 import { logout, loginSuccess } from '../../features/auth/authSlice';
 import api from '../../services/api';
+import { store } from '../../app/store';
 import NotificationCenter from './NotificationCenter';
 
 const Layout = () => {
@@ -27,10 +28,55 @@ const Layout = () => {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Blacklist the refresh token on the server before clearing client state.
+    // This ensures the token cannot be reused even if captured by a third party.
+    const currentRefreshToken = store?.getState?.()?.auth?.refreshToken;
+    if (currentRefreshToken) {
+      try {
+        await api.post('/auth/logout/', { refresh: currentRefreshToken });
+      } catch (e) {
+        // Proceed with client-side logout even if server call fails.
+        console.warn('Server logout failed; proceeding with client logout.', e);
+      }
+    }
     dispatch(logout());
     navigate('/login');
   };
+
+  // Idle Session Timeout (30 minutes)
+  const idleTimeoutRef = useRef(null);
+  const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+  useEffect(() => {
+    if (!user) return;
+
+    const resetIdleTimeout = () => {
+      if (idleTimeoutRef.current) {
+        clearTimeout(idleTimeoutRef.current);
+      }
+      idleTimeoutRef.current = setTimeout(() => {
+        console.warn('Session expired due to inactivity.');
+        handleLogout();
+      }, IDLE_TIMEOUT_MS);
+    };
+
+    // Set initial timeout
+    resetIdleTimeout();
+
+    // Attach event listeners for user activity
+    const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+    events.forEach((event) => {
+      window.addEventListener(event, resetIdleTimeout);
+    });
+
+    return () => {
+      if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
+      events.forEach((event) => {
+        window.removeEventListener(event, resetIdleTimeout);
+      });
+    };
+  }, [user]);
 
   const navItems = [];
 

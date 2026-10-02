@@ -34,6 +34,18 @@ class UserMeView(APIView):
         mail_account_id = None
         if profile and profile.mail_account_id:
             mail_account_id = profile.mail_account_id
+
+        # Include WhatsApp sessions owned by this user (for session selector).
+        whatsapp_sessions = []
+        try:
+            from whatsapp.models import WhatsAppSession
+            sessions = WhatsAppSession.objects.filter(
+                owner=user, is_active=True
+            ).values('id', 'session_name', 'status', 'phone_number').order_by('-last_used_at', '-created_at')[:10]
+            whatsapp_sessions = list(sessions)
+        except Exception:
+            pass  # WhatsApp may not be configured; degrade gracefully.
+
         return Response({
             'id': user.id,
             'username': user.username,
@@ -44,6 +56,7 @@ class UserMeView(APIView):
             'timezone': profile.timezone if profile else 'UTC',
             'is_superuser': user.is_superuser,
             'mail_account_id': mail_account_id,
+            'whatsapp_sessions': whatsapp_sessions,
         })
 
     def patch(self, request):
@@ -138,7 +151,7 @@ class UserViewSet(viewsets.ModelViewSet):
         return super().update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
-        # Prevent Manager from deleting a superuser
+        # Prevent Manager from deleting ANY user account
         user = request.user
         is_manager = (
             not user.is_superuser and
@@ -146,10 +159,8 @@ class UserViewSet(viewsets.ModelViewSet):
             user.profile.role == 'MANAGER'
         )
         if is_manager:
-            instance = self.get_object()
-            if instance.is_superuser:
-                from rest_framework.exceptions import PermissionDenied
-                raise PermissionDenied("Managers cannot delete superuser accounts.")
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Managers are not allowed to delete user accounts.")
         return super().destroy(request, *args, **kwargs)
 class _SuperOrManager(BasePermission):
     """Allows superuser or Manager role."""

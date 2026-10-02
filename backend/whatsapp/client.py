@@ -51,9 +51,21 @@ class WAHAClient:
     """
 
     def __init__(self):
-        self._base_url: str = self._get_base_url()
-        self._api_key: str = self._get_api_key()
-        self._timeout: int = self._get_timeout()
+        # Read env at init but also re-read on each request via properties.
+        # This avoids issues with stale config when env vars change.
+        pass
+
+    @property
+    def _base_url(self) -> str:
+        return self._get_base_url()
+
+    @property
+    def _api_key(self) -> str:
+        return self._get_api_key()
+
+    @property
+    def _timeout(self) -> int:
+        return self._get_timeout()
 
     @staticmethod
     def _get_base_url() -> str:
@@ -133,10 +145,12 @@ class WAHAClient:
 
             # Log without exposing the API key.
             logger.warning(
-                "WAHA HTTP error: method=%s path=%s status=%d",
+                "WAHA HTTP error: method=%s path=%s status=%d payload=%s detail=%s",
                 method,
                 path,
                 exc.code,
+                payload,
+                detail,
                 extra={"status_code": exc.code},
             )
 
@@ -148,7 +162,7 @@ class WAHAClient:
                 )
 
             raise WAHAServiceError(
-                f"WAHA returned HTTP {exc.code} for {method} {path}",
+                f"WAHA returned HTTP {exc.code} for {method} {path}. Detail: {detail}",
                 status_code=exc.code,
                 detail=detail,
             )
@@ -240,6 +254,7 @@ class WAHAClient:
         session_name: str,
         chat_id: str,
         text: str,
+        reply_to: str = None,
     ) -> dict:
         """
         Send a plain-text WhatsApp message.
@@ -248,18 +263,27 @@ class WAHAClient:
             session_name: WAHA session name.
             chat_id:      WhatsApp chat ID (e.g., "919876543210@c.us").
             text:         Message body (max 4096 chars).
+            reply_to:     Optional WAHA message ID to reply to.
 
         Returns:
             WAHA response with message ID.
         """
+        payload = {
+            "session": session_name,
+            "chatId": chat_id,
+            "text": text,
+        }
+        if reply_to:
+            payload["reply_to"] = reply_to
+            # WAHA quirk: when reply_to is present, session must also be in query string
+            endpoint = f"/api/sendText?session={session_name}"
+        else:
+            endpoint = "/api/sendText"
+
         _status, body = self._request(
             "POST",
-            f"/api/sendText",
-            payload={
-                "session": session_name,
-                "chatId": chat_id,
-                "text": text,
-            },
+            endpoint,
+            payload=payload,
         )
         return body
 
@@ -361,7 +385,6 @@ def get_waha_client() -> WAHAClient:
             status_code=503,
         )
 
-    global _client_instance
-    if _client_instance is None:
-        _client_instance = WAHAClient()
-    return _client_instance
+    # Always return a fresh client so env var changes (e.g. tunnel URL rotation)
+    # take effect without requiring a server restart.
+    return WAHAClient()

@@ -13,6 +13,7 @@ class UserProfile(models.Model):
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='PRE')
     timezone = models.CharField(max_length=64, default='UTC')
     mail_account = models.ForeignKey('MailAccount', on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_users')
+    whatsapp_sessions = models.ManyToManyField('whatsapp.WhatsAppSession', blank=True, related_name='assigned_profiles')
 
     def __str__(self):
         return f"{self.user.username} - {self.get_role_display()}"

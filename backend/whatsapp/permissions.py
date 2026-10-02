@@ -7,6 +7,7 @@ Mapped to existing Market Intel roles:
   SuperAdmin (is_superuser)  → full access
   MANAGER                    → read-only + monitoring + config (no sends)
   LQ                         → send + read (their authorized contacts only)
+                               + manage own WhatsApp sessions
   PRE                        → no WhatsApp access
 
 Do not create permissions casually.
@@ -56,12 +57,40 @@ class CanViewWhatsApp(BasePermission):
         return bool(profile and profile.role in ("LQ", "MANAGER"))
 
 
+class CanManageOwnWhatsAppSession(BasePermission):
+    """
+    LQ users and Super Admin can manage their own WhatsApp sessions.
+
+    Normal LQ users:
+      - Register new session names (owned by them).
+      - Start/stop their own sessions.
+      - View their own sessions.
+      - Cannot manage another user's session.
+
+    Super Admin:
+      - Can manage any session.
+
+    MANAGER and PRE cannot manage sessions.
+    """
+
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        if request.user.is_superuser:
+            return True
+        profile = getattr(request.user, "profile", None)
+        return bool(profile and profile.role == "LQ")
+
+
 class CanManageWhatsAppSession(BasePermission):
     """
-    Only Super Admin can start/stop/logout WhatsApp sessions.
+    Only Super Admin can perform administrative session actions:
+    (WAHA-level logout, which disconnects the WhatsApp account itself)
 
-    Sessions are sensitive — unauthorized session actions could log out
-    the shared business WhatsApp account.
+    This is a deliberate higher barrier — unauthorized session logout
+    could log out the WhatsApp account entirely.
+
+    For normal start/stop of own sessions, use CanManageOwnWhatsAppSession.
     """
 
     def has_permission(self, request, view):
@@ -74,7 +103,7 @@ class CanManageWhatsAppSession(BasePermission):
                 request.user.is_superuser or
                 (profile and profile.role in ("LQ", "MANAGER"))
             )
-        # Write operations (start/stop/logout) require Super Admin.
+        # Write operations (WAHA-level logout) require Super Admin.
         return request.user.is_superuser
 
 

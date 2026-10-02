@@ -137,7 +137,7 @@ def _write_audit_log(
         action=action,
         performed_by=performed_by,
         performed_by_role=profile.role if profile else None,
-        session_name=session_name or "default",
+        session_name=session_name or "",
         chat_id=chat_id,
         success=success,
         result_code=result_code,
@@ -601,12 +601,16 @@ def send_whatsapp_message(
     # ------------------------------------------------------------------
     # STEP 11: Get/create conversation record
     # ------------------------------------------------------------------
+    # Resolve the session object before creating the conversation.
+    # The session MUST be owned by performed_by for the ownership chain.
+    session = _get_or_create_session(session_name)
+
     conversation, _ = WhatsAppConversation.objects.get_or_create(
         chat_id=chat_id,
+        session=session,
         defaults={
             "prospect_contact": prospect_contact,
             "prospect": prospect_contact.prospect,
-            "session": _get_or_create_session(session_name),
             "is_matched": True,
         },
     )
@@ -639,7 +643,7 @@ def send_whatsapp_message(
     # ------------------------------------------------------------------
     # STEP 13: Call WAHA
     # ------------------------------------------------------------------
-    session = _get_or_create_session(session_name)
+    # session was already resolved in STEP 11 above.
     client = get_waha_client()
 
     try:
@@ -662,8 +666,9 @@ def send_whatsapp_message(
             session.send_count += 1
             session.consecutive_failed_sends = 0  # Reset on success.
             session.last_successful_message_at = timezone.now()
+            session.last_used_at = timezone.now()
             session.save(update_fields=[
-                "send_count", "consecutive_failed_sends", "last_successful_message_at"
+                "send_count", "consecutive_failed_sends", "last_successful_message_at", "last_used_at"
             ])
 
             conversation.last_message_at = timezone.now()

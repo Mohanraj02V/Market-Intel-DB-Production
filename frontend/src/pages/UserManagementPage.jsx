@@ -121,9 +121,11 @@ const UserManagementPage = () => {
                         <button onClick={() => handleEditClick(user)} className="text-indigo-600 hover:text-indigo-900" title="Edit User">
                           <Edit2 size={18} />
                         </button>
-                        <button onClick={() => handleDelete(user.id)} className="text-red-500 hover:text-red-700" title="Delete User">
-                          <Trash2 size={18} />
-                        </button>
+                        {currentUser?.is_superuser && (
+                          <button onClick={() => handleDelete(user.id)} className="text-red-500 hover:text-red-700" title="Delete User">
+                            <Trash2 size={18} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

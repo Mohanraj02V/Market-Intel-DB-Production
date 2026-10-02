@@ -10,9 +10,15 @@ Design principles:
   - All sensitive data (API keys, session secrets) stay in environment
     variables, never in the database.
 
+Ownership chain (invariant):
+  request.user
+    → WhatsAppSession.owner == request.user
+    → WhatsAppConversation.session
+    → WhatsAppMessage.conversation
+
 Models defined here:
   WhatsAppConfiguration   -- Per-company WAHA configuration flags
-  WhatsAppSession         -- WhatsApp session state tracking
+  WhatsAppSession         -- WhatsApp session state tracking (owned by User)
   WhatsAppConversation    -- Maps WhatsApp chat ID to a ProspectContact
   WhatsAppMessage         -- Sent/received message records
   WhatsAppOptOut          -- Contacts who requested no further messages
@@ -117,10 +123,14 @@ class WhatsAppConfiguration(models.Model):
 
 class WhatsAppSession(models.Model):
     """
-    Tracks the current state of the WAHA WhatsApp session.
+    Tracks the current state of a WAHA WhatsApp session.
 
-    There is typically one session per deployment.
-    This model stores state received from WAHA webhook events and health polls.
+    Each session is owned by a specific User.
+    A user may have multiple sessions with different session_names.
+    The WAHA session_name is globally unique (WAHA identifies sessions by name).
+
+    Ownership invariant:
+        WhatsAppSession.owner == request.user (always enforced at view layer)
     """
 
     class Status(models.TextChoices):
@@ -132,11 +142,22 @@ class WhatsAppSession(models.Model):
         FAILED = "FAILED", "Failed"
         STOPPED = "STOPPED", "Stopped"
 
+    # Owner: the User who registered/owns this WAHA session.
+    # SET_NULL on cascade so session data is preserved if user is deleted
+    # (admin can investigate before cleanup).
+    owner = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="whatsapp_sessions",
+        help_text="The Market Intel user who owns and registered this WhatsApp session.",
+    )
+
     session_name = models.CharField(
         max_length=100,
-        default="default",
         unique=True,
-        help_text="WAHA session name (matches WAHA session ID).",
+        help_text="WAHA session name (matches WAHA session ID). Globally unique.",
     )
 
     status = models.CharField(
@@ -148,6 +169,15 @@ class WhatsAppSession(models.Model):
     # Phone number of the connected WhatsApp account.
     # Populated after successful authentication.
     phone_number = models.CharField(max_length=50, blank=True, null=True)
+
+    # Whether this is the currently selected/active session for the owner.
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether this is one of the user's active sessions (not deleted/archived).",
+    )
+
+    # Track when this session was last used for sending/reading.
+    last_used_at = models.DateTimeField(null=True, blank=True)
 
     # Last WAHA health check response.
     last_health_check_at = models.DateTimeField(null=True, blank=True)
@@ -175,9 +205,14 @@ class WhatsAppSession(models.Model):
 
     class Meta:
         verbose_name = "WhatsApp Session"
+        indexes = [
+            models.Index(fields=["owner", "is_active"]),
+            models.Index(fields=["session_name"]),
+        ]
 
     def __str__(self):
-        return f"Session '{self.session_name}' ({self.status})"
+        owner_name = self.owner.username if self.owner else "unowned"
+        return f"Session '{self.session_name}' owned by {owner_name}"
 
 
 # ---------------------------------------------------------------------------
@@ -189,23 +224,29 @@ class WhatsAppConversation(models.Model):
     Maps a WhatsApp chat ID to a Market Intel ProspectContact (Key Person).
 
     This is the bridge between raw WhatsApp chats and Market Intel records.
-    Every conversation must be associated with an authorized prospect contact.
+    Every conversation must belong to a specific WhatsAppSession.
+
+    chat_id uniqueness is scoped to the session (not global), because the
+    same WhatsApp contact can exist under multiple WAHA sessions/users.
+
+    Ownership chain:
+        WhatsAppSession.owner → WhatsAppConversation.session
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     # The raw WhatsApp chat ID (e.g., "919876543210@c.us").
     # This is the authoritative identifier used by WAHA.
+    # NOTE: Uniqueness is SCOPED to the session via unique_together below.
     chat_id = models.CharField(
         max_length=100,
-        unique=True,
         help_text="WhatsApp chat ID in format: <digits>@c.us",
     )
-    
+
     # Store the profile name reported by WhatsApp (pushName / notifyName).
     whatsapp_name = models.CharField(
         max_length=255,
-        blank=True, 
+        blank=True,
         null=True,
         help_text="Name provided by WhatsApp profile (pushName or notifyName)",
     )
@@ -231,6 +272,7 @@ class WhatsAppConversation(models.Model):
     )
 
     # The WAHA session this conversation belongs to.
+    # Required for ownership chain enforcement.
     session = models.ForeignKey(
         WhatsAppSession,
         on_delete=models.SET_NULL,
@@ -254,15 +296,31 @@ class WhatsAppConversation(models.Model):
     last_message_preview = models.CharField(max_length=200, blank=True, null=True)
     last_message_from_me = models.BooleanField(null=True, blank=True)
 
+    # Soft-delete support.
+    # When deleted, conversation is hidden from user but data is preserved.
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="whatsapp_deleted_conversations",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "WhatsApp Conversation"
+        # chat_id uniqueness is scoped to the session.
+        # The same WhatsApp contact can exist under different sessions/users.
+        unique_together = [("session", "chat_id")]
         indexes = [
             models.Index(fields=["chat_id"]),
             models.Index(fields=["prospect_contact"]),
             models.Index(fields=["is_matched"]),
+            models.Index(fields=["session", "is_deleted"]),
         ]
 
     def __str__(self):
@@ -336,7 +394,7 @@ class WhatsAppMessage(models.Model):
         null=True,
         help_text="First 500 chars of message body (for admin reference only).",
     )
-    
+
     # Store the entire message body
     full_body = models.TextField(blank=True, null=True, help_text="Complete un-truncated message body.")
 
@@ -357,6 +415,18 @@ class WhatsAppMessage(models.Model):
     error_message = models.TextField(blank=True, null=True)
     error_code = models.CharField(max_length=50, blank=True, null=True)
 
+    # Soft-delete support.
+    # Message content/media is hidden when deleted but metadata is preserved for audit.
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="whatsapp_deleted_messages",
+    )
+
     # Timestamps.
     waha_timestamp = models.DateTimeField(
         null=True,
@@ -376,6 +446,7 @@ class WhatsAppMessage(models.Model):
             models.Index(fields=["idempotency_key"]),
             models.Index(fields=["waha_message_id"]),
             models.Index(fields=["conversation", "direction", "created_at"]),
+            models.Index(fields=["conversation", "is_deleted", "created_at"]),
         ]
 
     def __str__(self):
@@ -556,6 +627,8 @@ class WhatsAppAuditLog(models.Model):
     class Action(models.TextChoices):
         SESSION_STARTED = "SESSION_STARTED", "Session Started"
         SESSION_STOPPED = "SESSION_STOPPED", "Session Stopped"
+        SESSION_REGISTERED = "SESSION_REGISTERED", "Session Registered"
+        SESSION_SELECTED = "SESSION_SELECTED", "Session Selected"
         QR_REQUESTED = "QR_REQUESTED", "QR Requested"
         QR_SCANNED = "QR_SCANNED", "QR Scanned"
         SESSION_CONNECTED = "SESSION_CONNECTED", "Session Connected"
@@ -563,12 +636,15 @@ class WhatsAppAuditLog(models.Model):
         MESSAGE_SENT = "MESSAGE_SENT", "Message Sent"
         MESSAGE_RECEIVED = "MESSAGE_RECEIVED", "Message Received"
         MESSAGE_FAILED = "MESSAGE_FAILED", "Message Failed"
+        MESSAGE_DELETED = "MESSAGE_DELETED", "Message Deleted"
+        CONVERSATION_DELETED = "CONVERSATION_DELETED", "Conversation Deleted"
         SEND_BLOCKED = "SEND_BLOCKED", "Send Blocked"
         OPT_OUT_REGISTERED = "OPT_OUT_REGISTERED", "Opt-Out Registered"
         OPT_OUT_REVERSED = "OPT_OUT_REVERSED", "Opt-Out Reversed"
         SAFETY_STOP = "SAFETY_STOP", "Safety Stop"
         ADMIN_RESUMED = "ADMIN_RESUMED", "Admin Resumed"
         CONFIG_CHANGED = "CONFIG_CHANGED", "Config Changed"
+        AUTH_LOGOUT = "AUTH_LOGOUT", "Auth Logout"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     action = models.CharField(max_length=30, choices=Action.choices, db_index=True)
@@ -685,4 +761,3 @@ class WhatsAppEvent(models.Model):
 
     def __str__(self):
         return f"Event: {self.event_type} [{self.processing_status}] at {self.received_at}"
-

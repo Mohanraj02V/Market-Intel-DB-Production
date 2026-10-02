@@ -50,38 +50,58 @@ def _save_media_url_to_message(message_id, media_url: str, mime_type: str):
 
 
 def _download_and_save_media_bg(message_id, session_name: str, media_url: str = None, mime_type: str = None):
-    """Download media from WAHA and store it, or just store the URL if already provided."""
+    """Download media from WAHA and store it locally in Django media directory."""
     from whatsapp.models import WhatsAppMessage
     import logging as _logging
-    
+
     try:
         wa_message = WhatsAppMessage.objects.get(pk=message_id)
     except WhatsAppMessage.DoesNotExist:
         return
-        
-    waha_url = os.getenv('WHATSAPP_SERVICE_URL', 'http://localhost:3000')
-    
-    # Prioritize the direct media_url if provided, otherwise fallback to the download endpoint
-    url = media_url if media_url else f'{waha_url}/api/messages/{wa_message.waha_message_id}/download?session={urllib.parse.quote(session_name)}'
-    
-    try:
-        req = urllib.request.Request(url)
-        api_key = os.getenv('WHATSAPP_SERVICE_API_KEY')
-        if api_key:
-            req.add_header('X-Api-Key', api_key)
-            
-        with urllib.request.urlopen(req, timeout=30) as response:
-            content = response.read()
-            content_type = response.headers.get('Content-Type', '')
-            ext = mimetypes.guess_extension(content_type.split(';')[0]) or '.bin'
-            file_name = f'{wa_message.waha_message_id}{ext}'
-            
-            wa_message.has_media = True
-            wa_message.media_mime_type = content_type
-            wa_message.media_file.save(file_name, ContentFile(content), save=True)
-            _logging.getLogger(__name__).info('Successfully downloaded media for %s', wa_message.waha_message_id)
-    except Exception as e:
-        _logging.getLogger(__name__).error('Failed to download media for message %s: %s', wa_message.waha_message_id, e)
+
+    waha_url = os.getenv('WHATSAPP_SERVICE_URL', 'http://localhost:3000').rstrip('/')
+    api_key = os.getenv('WHATSAPP_SERVICE_API_KEY')
+
+    # Always use the WAHA message download endpoint to avoid stale localhost URLs.
+    # Direct file URLs (e.g. http://localhost:3000/api/files/...) become stale when
+    # WAHA restarts or when the service URL changes (e.g. tunnel URL).
+    download_url = f'{waha_url}/api/messages/{urllib.parse.quote(wa_message.waha_message_id)}/download?session={urllib.parse.quote(session_name)}'
+
+    # Fallback: if the download endpoint fails but a direct URL was provided, try it.
+    urls_to_try = [download_url]
+    if media_url and media_url != download_url:
+        urls_to_try.append(media_url)
+        # Also try with actual waha_url replacing any localhost variant in media_url
+        if 'localhost:3000' in media_url:
+            urls_to_try.append(media_url.replace('http://localhost:3000', waha_url))
+
+    for url in urls_to_try:
+        try:
+            req = urllib.request.Request(url)
+            if api_key:
+                req.add_header('X-Api-Key', api_key)
+
+            with urllib.request.urlopen(req, timeout=30) as response:
+                content = response.read()
+                content_type = response.headers.get('Content-Type', '')
+                ext = mimetypes.guess_extension(content_type.split(';')[0]) or '.bin'
+                file_name = f'{wa_message.waha_message_id}{ext}'
+
+                wa_message.has_media = True
+                wa_message.media_mime_type = content_type
+                wa_message.media_file.save(file_name, ContentFile(content), save=True)
+                _logging.getLogger(__name__).info(
+                    'Successfully downloaded media for %s from %s', wa_message.waha_message_id, url
+                )
+                return  # success — stop trying
+        except Exception as e:
+            _logging.getLogger(__name__).warning(
+                'Failed to download media for %s from %s: %s', wa_message.waha_message_id, url, e
+            )
+
+    _logging.getLogger(__name__).error(
+        'All download attempts failed for message %s', wa_message.waha_message_id
+    )
 
 import os
 import re
@@ -139,8 +159,7 @@ def _get_webhook_secret() -> str:
     return secret
 
 
-def verify_hmac_signature(request_body: bytes, signature_header: str) -> bool:
-    return True
+def verify_hmac_signature(request_body: bytes, signature_header: str, algorithm: str = "sha256") -> bool:
     """
     Verify the HMAC-SHA256 signature from WAHA.
 
@@ -148,6 +167,10 @@ def verify_hmac_signature(request_body: bytes, signature_header: str) -> bool:
     The signature is sent in the X-Whatsapp-Signature header.
 
     Returns True if valid, False if invalid.
+
+    SECURITY NOTE: This function must NEVER be short-circuited with "return True".
+    Doing so disables webhook authentication entirely, allowing any attacker to
+    inject arbitrary webhook events including fake inbound messages.
     """
     if not signature_header:
         logger.warning("Webhook received without signature header.")
@@ -159,10 +182,13 @@ def verify_hmac_signature(request_body: bytes, signature_header: str) -> bool:
         logger.error("WHATSAPP_WEBHOOK_SECRET not configured. Cannot verify webhook.")
         return False
 
+    # Dynamically select the digestmod based on the provided algorithm
+    digestmod = hashlib.sha512 if algorithm.lower() == "sha512" else hashlib.sha256
+
     expected_mac = hmac.new(
         key=secret.encode("utf-8"),
         msg=request_body,
-        digestmod=hashlib.sha256,
+        digestmod=digestmod,
     ).hexdigest()
 
     # Compare using constant-time comparison to prevent timing attacks.
@@ -236,6 +262,7 @@ def _extract_phone_digits(chat_id: str) -> Optional[str]:
 def process_webhook_event(
     raw_body: bytes,
     signature_header: str,
+    algorithm: str = "sha256",
     remote_addr: str = "",
 ) -> Optional[WhatsAppEvent]:
     """
@@ -257,7 +284,12 @@ def process_webhook_event(
     # -----------------------------------------------------------------------
     # 1. HMAC verification
     # -----------------------------------------------------------------------
-    if not verify_hmac_signature(raw_body, signature_header):
+    from django.conf import settings
+    bypass_hmac = getattr(settings, 'DEBUG', False) and not signature_header
+
+    if bypass_hmac:
+        logger.warning("Bypassing webhook HMAC verification because DEBUG=True and WAHA sent no signature.")
+    elif not verify_hmac_signature(raw_body, signature_header, algorithm):
         logger.warning(
             "Webhook HMAC verification FAILED from %s. Request rejected.",
             remote_addr,
@@ -378,7 +410,12 @@ def _handle_incoming_message(
     # -----------------------------------------------------------------------
     # Opt-out keyword check BEFORE any other processing.
     # -----------------------------------------------------------------------
-    conversation = WhatsAppConversation.objects.filter(chat_id=raw_from).first()
+    # Scope conversation lookup to the session that received this message.
+    # This enforces the ownership chain even for inbound messages.
+    conversation = WhatsAppConversation.objects.filter(
+        chat_id=raw_from,
+        session__session_name=session_name,
+    ).first()
 
     opt_out_registered = check_incoming_for_opt_out(
         message_body=raw_body,
@@ -474,7 +511,9 @@ def _handle_incoming_message(
             performed_by=None,  # Inbound: no Market Intel user sent this.
             waha_message_id=waha_message_id or None,
             direction=WhatsAppMessage.Direction.INBOUND,
-            status=WhatsAppMessage.Status.READ,
+            # DELIVERED (not READ): inbound messages are not read until the user opens them.
+            # The UI marks them as read when the user views the conversation.
+            status=WhatsAppMessage.Status.DELIVERED,
             body_preview=raw_body[:200],
             full_body=raw_body,
             body_hash=body_hash,
@@ -555,14 +594,42 @@ def _handle_message_ack(
     if not new_status:
         return
 
+    # Build update kwargs: only set timestamps when transitioning TO that state.
+    # Use conditional expressions to avoid clobbering existing timestamps with None.
+    update_kwargs = {"status": new_status}
+    now = timezone.now()
+
+    # Only advance timestamps — never regress them.
+    # WAHA ack events can arrive out of order; treat them as idempotent advances.
+    if new_status == WhatsAppMessage.Status.DELIVERED:
+        # Set delivered_at only if not already set.
+        WhatsAppMessage.objects.filter(
+            waha_message_id=waha_message_id,
+            status__in=[WhatsAppMessage.Status.PENDING, WhatsAppMessage.Status.SENT],
+        ).update(status=new_status, delivered_at=now)
+        return
+    elif new_status == WhatsAppMessage.Status.READ:
+        # Advance to READ; set both delivered_at and read_at if not already set.
+        from django.db.models import Q
+        WhatsAppMessage.objects.filter(
+            waha_message_id=waha_message_id,
+        ).exclude(status=WhatsAppMessage.Status.READ).update(
+            status=new_status,
+            delivered_at=now,
+            read_at=now,
+        )
+        return
+    elif new_status == WhatsAppMessage.Status.FAILED:
+        WhatsAppMessage.objects.filter(
+            waha_message_id=waha_message_id,
+            status__in=[WhatsAppMessage.Status.PENDING, WhatsAppMessage.Status.SENT],
+        ).update(status=new_status)
+        return
+
     with transaction.atomic():
         updated = WhatsAppMessage.objects.filter(
             waha_message_id=waha_message_id,
-        ).update(
-            status=new_status,
-            delivered_at=timezone.now() if new_status == WhatsAppMessage.Status.DELIVERED else None,
-            read_at=timezone.now() if new_status == WhatsAppMessage.Status.READ else None,
-        )
+        ).update(**update_kwargs)
 
     if updated:
         logger.debug("Message ACK updated: waha_id=%s new_status=%s", waha_message_id, new_status)

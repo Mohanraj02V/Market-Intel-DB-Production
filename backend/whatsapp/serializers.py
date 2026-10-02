@@ -89,6 +89,35 @@ class WhatsAppSessionSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class WhatsAppSessionListSerializer(serializers.ModelSerializer):
+    """
+    Session serializer for the UI session selector.
+    Returns id, session_name, status, phone_number, and owner username.
+    Owner details are read-only and non-sensitive.
+    """
+    owner_username = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WhatsAppSession
+        fields = [
+            "id",
+            "session_name",
+            "status",
+            "phone_number",
+            "is_active",
+            "last_used_at",
+            "owner_username",
+            "started_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+    def get_owner_username(self, obj):
+        if obj.owner:
+            return obj.owner.username
+        return None
+
+
 class WhatsAppConversationSerializer(serializers.ModelSerializer):
     contact_name = serializers.SerializerMethodField()
     prospect_name = serializers.SerializerMethodField()
@@ -100,6 +129,7 @@ class WhatsAppConversationSerializer(serializers.ModelSerializer):
             "id",
             "chat_id",
             "is_matched",
+            "whatsapp_name",
             "contact_name",
             "prospect_name",
             "prospect_phone",

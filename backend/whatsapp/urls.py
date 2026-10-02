@@ -16,24 +16,30 @@ from django.urls import path
 from .views import (
     WhatsAppAuditLogView,
     WhatsAppConfigView,
+    WhatsAppConversationDeleteView,
     WhatsAppConversationMessagesView,
     WhatsAppConversationSyncView,
     WhatsAppConversationsView,
-    WhatsAppHealthView,
-    WhatsAppMediaProxyView,
-    WhatsAppProfilePicView,
     WhatsAppContactInfoView,
+    WhatsAppHealthView,
+    WhatsAppMarkReadView,
+    WhatsAppMediaProxyView,
+    WhatsAppMessageDeleteView,
     WhatsAppOptOutsView,
+    WhatsAppProfilePicView,
     WhatsAppQRView,
     WhatsAppResetSafetyStopView,
     WhatsAppSafetyEventsView,
+    WhatsAppSendMediaView,
     WhatsAppSendMessageView,
+    WhatsAppSessionListView,
     WhatsAppSessionLogoutView,
+    WhatsAppSessionRegisterView,
+    WhatsAppSessionAssignView,
     WhatsAppSessionStartView,
     WhatsAppSessionStopView,
     WhatsAppSetOutboundView,
     WhatsAppStatusView,
-    WhatsAppSendMediaView,
     WhatsAppWebhookView,
 )
 
@@ -41,15 +47,22 @@ urlpatterns = [
     # -- Health (no auth) --------------------------------------------------
     path("health/", WhatsAppHealthView.as_view(), name="whatsapp-health"),
 
-    # -- Media proxy (authenticated, proxies WAHA file URLs) ------------------
+    # -- Media proxy (authenticated, ownership-verified) -------------------
     path("media-proxy/", WhatsAppMediaProxyView.as_view(), name="whatsapp-media-proxy"),
+
+    # -- Profile / contact info (authenticated, session-resolved) ----------
     path("profile-pic/<str:chat_id>/", WhatsAppProfilePicView.as_view(), name="whatsapp-profile-pic"),
     path("contact-info/<str:chat_id>/", WhatsAppContactInfoView.as_view(), name="whatsapp-contact-info"),
 
     # -- Webhook (HMAC auth, no JWT) ----------------------------------------
     path("webhook/", WhatsAppWebhookView.as_view(), name="whatsapp-webhook"),
 
-    # -- Session management (Super Admin) ------------------------------------
+    # -- Session registration and listing (LQ / Super Admin) ---------------
+    path("session/register/", WhatsAppSessionRegisterView.as_view(), name="whatsapp-session-register"),
+    path("session/list/", WhatsAppSessionListView.as_view(), name="whatsapp-session-list"),
+    path("session/assign/", WhatsAppSessionAssignView.as_view(), name="whatsapp-session-assign"),
+
+    # -- Session management (own sessions / Super Admin) --------------------
     path("status/", WhatsAppStatusView.as_view(), name="whatsapp-status"),
     path("qr/", WhatsAppQRView.as_view(), name="whatsapp-qr"),
     path("session/start/", WhatsAppSessionStartView.as_view(), name="whatsapp-session-start"),
@@ -71,6 +84,23 @@ urlpatterns = [
         "conversations/<uuid:conversation_id>/sync/",
         WhatsAppConversationSyncView.as_view(),
         name="whatsapp-conversation-sync",
+    ),
+    path(
+        "conversations/<uuid:conversation_id>/read/",
+        WhatsAppMarkReadView.as_view(),
+        name="whatsapp-conversation-read",
+    ),
+    path(
+        "conversations/<uuid:conversation_id>/",
+        WhatsAppConversationDeleteView.as_view(),
+        name="whatsapp-conversation-delete",
+    ),
+
+    # -- Message management ------------------------------------------------
+    path(
+        "messages/<uuid:message_id>/",
+        WhatsAppMessageDeleteView.as_view(),
+        name="whatsapp-message-delete",
     ),
 
     # -- Configuration (Manager / Super Admin) --------------------------------
