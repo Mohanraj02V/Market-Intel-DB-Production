@@ -9,14 +9,18 @@ load_dotenv(override=True)
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # ── Security ──────────────────────────────────────────────────────────────────
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-default-key-for-dev')
-DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
+DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+
+_default_key = 'django-insecure-default-key-for-dev'
+SECRET_KEY = os.getenv('SECRET_KEY', _default_key)
+if not DEBUG and SECRET_KEY == _default_key:
+    raise ValueError("SECRET_KEY must be set in production!")
 
 ALLOWED_HOSTS = [
     h.strip()
-    for h in os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost,host.docker.internal').split(',')
+    for h in os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost').split(',')
     if h.strip()
-] + ['.trycloudflare.com']
+]
 
 # Trust the proxy (Nginx) HTTPS header so request.is_secure() works correctly.
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -153,7 +157,7 @@ CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
         'CORS_ALLOWED_ORIGINS',
-        'http://localhost:5173,http://localhost:3000'
+        'http://localhost:5173'
     ).split(',')
     if origin.strip()
 ]
@@ -163,10 +167,21 @@ CSRF_TRUSTED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
         'CSRF_TRUSTED_ORIGINS',
-        'http://localhost:5173,http://localhost:3000'
+        'http://localhost:5173'
     ).split(',')
     if origin.strip()
 ]
+
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    CSRF_COOKIE_SAMESITE = 'Lax'
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
 
 # ── Email open tracking ───────────────────────────────────────────────────────
 # Set to the public backend URL in production (e.g. https://YOUR_BACKEND_DOMAIN).
