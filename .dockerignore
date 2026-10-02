@@ -9,9 +9,9 @@ frontend/.env
 backend/**/.env
 frontend/**/.env
 
-__pycache__
-*.py[cod]
-*.pyo
+**/__pycache__
+**/*.py[cod]
+**/*.pyo
 
 .venv
 venv
