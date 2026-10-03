@@ -331,15 +331,36 @@ class WhatsAppSessionListView(APIView):
             # Sync existing local sessions
             all_local_sessions = WhatsAppSession.objects.all()
             for s in all_local_sessions:
-                if s.session_name not in waha_session_names:
+                waha_session_data = next((ws for ws in waha_sessions if ws.get("name") == s.session_name), None)
+                
+                if not waha_session_data:
                     new_status = "DISCONNECTED"
                 else:
-                    w_status = waha_status_map.get(s.session_name)
+                    w_status = waha_session_data.get("status")
                     new_status = "READY" if w_status == "WORKING" else "STOPPED"
+                    
+                    # Also update the phone number if it connected
+                    if w_status == "WORKING" and not s.phone_number:
+                        me_info = waha_session_data.get("me")
+                        if me_info and me_info.get("id"):
+                            s.phone_number = me_info.get("id").split("@")[0]
                 
+                update_fields = []
                 if s.status != new_status:
                     s.status = new_status
-                    s.save(update_fields=['status'])
+                    update_fields.append('status')
+                
+                # If we just assigned a phone number, we need to save it too
+                if waha_session_data and waha_session_data.get("status") == "WORKING":
+                    me_info = waha_session_data.get("me")
+                    if me_info and me_info.get("id"):
+                        new_phone = me_info.get("id").split("@")[0]
+                        if s.phone_number != new_phone:
+                            s.phone_number = new_phone
+                            update_fields.append('phone_number')
+                            
+                if update_fields:
+                    s.save(update_fields=update_fields)
                     
             # Auto-import missing sessions from WAHA
             existing_local_names = set(WhatsAppSession.objects.values_list("session_name", flat=True))
