@@ -348,30 +348,9 @@ class MailAccountViewSet(viewsets.ModelViewSet):
                             prospect_company_name = oe.prospect.company_name
                             break
 
-                # --- OWNERSHIP FILTERING ---
-                is_owned = False
-                # 1. If it's a sent email, did this user send it?
-                if 'sent' in folder.lower():
-                    clean_msg_id = message_id.strip('<>')
-                    if clean_msg_id and OutreachEmail.objects.filter(message_id__icontains=clean_msg_id, created_by=user).exists():
-                        is_owned = True
-                else:
-                    # 2. If it's an inbox/received email, is it a reply to this user?
-                    if in_reply_to or references:
-                        refs = (in_reply_to + ' ' + references).replace('<', ' ').replace('>', ' ').split()
-                        for ref in refs:
-                            ref = ref.strip()
-                            if ref and OutreachEmail.objects.filter(message_id__icontains=ref, created_by=user).exists():
-                                is_owned = True
-                                break
-                    # 3. Or if it's from a prospect the user has interacted with
-                    if not is_owned and prospect_company_name:
-                        if OutreachEmail.objects.filter(prospect__company_name=prospect_company_name, created_by=user).exists():
-                            is_owned = True
-                            
-                # If they don't own it, skip it
-                if not is_owned:
-                    continue
+                # --- OWNERSHIP FILTERING (REMOVED) ---
+                # User requested to display all mail, so we no longer filter by ownership.
+                # All emails will be displayed.
 
                 emails_list.append({
                     'uid': uid_str,
