@@ -1,3 +1,4 @@
+import uuid
 from django.utils import timezone
 from rest_framework.decorators import action, api_view
 from accounts.permissions import IsPRE, IsLQ, IsPREOrLQ, IsManagerOrSuperuser
@@ -219,6 +220,324 @@ class ProspectViewSet(viewsets.ModelViewSet):
             phone_number=phone_number.strip() if phone_number else ''
         )
         return Response({'status': 'contact added'}, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'], url_path='import/blueprint', permission_classes=[IsPRE])
+    def import_blueprint(self, request):
+        import csv
+        from django.http import HttpResponse
+        
+        headers = [
+            'Company Name', 'Country', 'Complete Address', 
+            'Primary Industries', 'Official Phone Number', 'Official Email Address', 
+            'Official Website URL', 'LinkedIn Company Page', 'Company Structure', 'Operational Status', 'Target / Surviving Company', 'Owner Sector', 'Company Type', 'Primary Offering Type',
+            'Key Contacts / Personnel - Contact Name', 'Key Contacts / Personnel - Designation / Role', 'Key Contacts / Personnel - Official Email', 'Key Contacts / Personnel - Phone Number',
+            'Market Offerings - Products Offered', 'Market Offerings - Services Provided', 'Market Offerings - Solutions Provided'
+        ]
+        
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="prospect_import_blueprint.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow(headers)
+        
+        # Hint row for dropdowns
+        writer.writerow([
+            '', '', '', '', '', '', '', '',
+            '(Parent, Branch, Subsidiary)',
+            '(Active, Inactive, Permanently Closed, Acquired, Merged)',
+            '(Name of existing company)',
+            '(Target Company, Entering Company)',
+            '(Private Company, Government Company, Semi Government Company)',
+            '(Products, Services, Solutions, Multiple)',
+            '', '', '', '', '', '', ''
+        ])
+        
+        # Sample row
+        writer.writerow([
+            'Acme Corp', 'United Arab Emirates', '123 Tech St, Dubai, UAE',
+            'Technology', '+971 4 555 0199', 'info@acme.example.com',
+            'https://acme.example.com', 'https://linkedin.com/company/acme', 'Parent', 'Active', '', '', 'Private Company', 'Multiple',
+            'John Doe', 'CEO', 'john@acme.example.com', '+971 4 555 0101',
+            'Enterprise Cloud Servers', 'IT Strategy & Consulting', 'Digital Transformation Package'
+        ])
+        
+        return response
+
+    @action(detail=False, methods=['post'], url_path='import/headers', permission_classes=[IsPRE])
+    def import_headers(self, request):
+        if 'file' not in request.FILES:
+            return Response({'error': 'No file uploaded.'}, status=status.HTTP_400_BAD_REQUEST)
+        file = request.FILES['file']
+        filename = file.name.lower()
+        import csv
+        import io
+        headers = []
+        if filename.endswith('.csv'):
+            decoded_file = file.read().decode('utf-8')
+            reader = csv.reader(io.StringIO(decoded_file))
+            headers = next(reader, [])
+        elif filename.endswith('.xlsx'):
+            try:
+                import openpyxl
+            except ImportError:
+                return Response({'error': 'openpyxl is required to parse XLSX files.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            wb = openpyxl.load_workbook(file, data_only=True)
+            sheet = wb.active
+            headers = [str(cell.value) if cell.value is not None else '' for cell in sheet[1]]
+        else:
+            return Response({'error': 'Only CSV and XLSX files are supported.'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'headers': headers}, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], url_path='import/preview', permission_classes=[IsPRE])
+    def import_preview(self, request):
+        if 'file' not in request.FILES:
+            return Response({'error': 'No file uploaded.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        file = request.FILES['file']
+        filename = file.name.lower()
+        
+        import csv
+        import io
+        
+        data = []
+        if filename.endswith('.csv'):
+            decoded_file = file.read().decode('utf-8')
+            reader = csv.DictReader(io.StringIO(decoded_file))
+            data = [row for row in reader]
+        elif filename.endswith('.xlsx'):
+            try:
+                import openpyxl
+            except ImportError:
+                return Response({'error': 'openpyxl is required to parse XLSX files.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            wb = openpyxl.load_workbook(file, data_only=True)
+            sheet = wb.active
+            headers = [cell.value for cell in sheet[1]]
+            for row in sheet.iter_rows(min_row=2, values_only=True):
+                data.append(dict(zip(headers, row)))
+        else:
+            return Response({'error': 'Only CSV and XLSX files are supported.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        import json
+        mapping_str = request.data.get('mapping', '{}')
+        try:
+            mapping = json.loads(mapping_str)
+        except:
+            mapping = {}
+
+        if mapping:
+            grouped_data = {}
+            for row in data:
+                new_row = dict(row)
+                for orig, new_key in mapping.items():
+                    if new_key and new_key != orig:
+                        new_row[new_key] = row.get(orig)
+                
+                # Build key_contacts
+                key_contacts = []
+                c_name = new_row.get('contact_name')
+                if c_name:
+                    key_contacts.append({
+                        'contact_name': str(c_name).strip(),
+                        'designation': str(new_row.get('contact_designation', '')).strip(),
+                        'official_email': str(new_row.get('contact_email', '')).strip(),
+                        'phone_number': str(new_row.get('contact_phone', '')).strip()
+                    })
+                
+                # Build offerings_data
+                offerings = []
+                for o_type, o_key in [('Product', 'product'), ('Service', 'service'), ('Solution', 'solution')]:
+                    val = new_row.get(o_key)
+                    if val:
+                        offerings.append({
+                            'offering_type': o_type,
+                            'name': str(val).strip()
+                        })
+                
+                comp_name = str(new_row.get('company_name', '')).strip().lower()
+                if comp_name and comp_name in grouped_data:
+                    if key_contacts:
+                        grouped_data[comp_name]['key_contacts'].extend(key_contacts)
+                    if offerings:
+                        grouped_data[comp_name]['offerings_data'].extend(offerings)
+                else:
+                    new_row['key_contacts'] = key_contacts
+                    new_row['offerings_data'] = offerings
+                    if comp_name:
+                        grouped_data[comp_name] = new_row
+                    else:
+                        # Fallback for empty company name
+                        grouped_data[str(uuid.uuid4())] = new_row
+                        
+            data = list(grouped_data.values())
+        
+        preview_data = []
+        existing_companies = set(Prospect.objects.values_list('company_name', flat=True))
+        existing_companies = {c.lower() for c in existing_companies}
+        uploaded_companies = set()
+        
+        for i, row in enumerate(data):
+            row_num = i + 1
+            company_name = str(row.get('company_name', '')).strip()
+            email = str(row.get('official_email_address', '')).strip()
+            
+            validation_status = 'VALID'
+            errors = []
+            
+            if not company_name:
+                errors.append('Company Name is required.')
+                validation_status = 'INVALID'
+            else:
+                comp_lower = company_name.lower()
+                if comp_lower in existing_companies:
+                    errors.append('Duplicate company name already in DB.')
+                    validation_status = 'INVALID'
+                elif comp_lower in uploaded_companies:
+                    errors.append('Duplicate company name within file.')
+                    validation_status = 'INVALID'
+                uploaded_companies.add(comp_lower)
+                
+            emails_to_verify = []
+            if email:
+                emails_to_verify.append({'email': email, 'status': 'UNVERIFIED', 'type': 'company'})
+            for contact in row.get('key_contacts', []):
+                c_email = contact.get('official_email')
+                if c_email:
+                    emails_to_verify.append({'email': c_email, 'status': 'UNVERIFIED', 'type': 'contact', 'contact_name': contact.get('contact_name')})
+            
+            preview_row = {
+                'row_number': row_num,
+                'data': row,
+                'validation_status': validation_status,
+                'errors': errors,
+                'emails_to_verify': emails_to_verify
+            }
+            preview_data.append(preview_row)
+            
+        return Response(preview_data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], url_path='import/commit', permission_classes=[IsPRE])
+    def import_commit(self, request):
+        from django.db import transaction, IntegrityError
+        rows = request.data.get('rows', [])
+        if not rows:
+            return Response({'error': 'No data to import.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        created_prospects = []
+        
+        try:
+            with transaction.atomic():
+                for row_data in rows:
+                    if row_data.get('validation_status') != 'VALID':
+                        raise ValueError(f"Row {row_data.get('row_number')} is invalid.")
+                    
+                    data = row_data.get('data', {})
+                    
+                    target_name = data.get('status_target')
+                    if target_name:
+                        target_prospect = Prospect.objects.filter(company_name__iexact=str(target_name).strip()).first()
+                        if target_prospect:
+                            data['status_target'] = target_prospect.id
+                        else:
+                            raise ValueError(f"Row {row_data.get('row_number')}: Target / Surviving Company '{target_name}' not found in the database.")
+                    
+                    serializer = self.get_serializer(data=data, context={'request': request, 'is_import': True})
+                    if not serializer.is_valid():
+                        def format_errors(errors_dict, prefix=""):
+                            msgs = []
+                            if isinstance(errors_dict, list):
+                                for i, err in enumerate(errors_dict):
+                                    if isinstance(err, dict) and err:
+                                        msgs.extend(format_errors(err, f"{prefix}[{i+1}] "))
+                                    elif not isinstance(err, dict):
+                                        msgs.append(f"{prefix}{err}")
+                            elif isinstance(errors_dict, dict):
+                                for field, errs in errors_dict.items():
+                                    field_name = str(field).replace('_', ' ').title()
+                                    if isinstance(errs, dict) or (isinstance(errs, list) and len(errs)>0 and isinstance(errs[0], dict)):
+                                        msgs.extend(format_errors(errs, f"{prefix}{field_name} "))
+                                    elif isinstance(errs, list):
+                                        msgs.append(f"{prefix}{field_name}: {', '.join([str(e) for e in errs])}")
+                                    else:
+                                        msgs.append(f"{prefix}{field_name}: {errs}")
+                            else:
+                                msgs.append(f"{prefix}{errors_dict}")
+                            return msgs
+
+                        err_msgs = format_errors(serializer.errors)
+                        raise ValueError(f"Row {row_data.get('row_number')} validation failed: {' | '.join(err_msgs)}")
+                    
+                    emails_to_verify = row_data.get('emails_to_verify', [])
+                    for ev in emails_to_verify:
+                        if ev.get('status') != 'VALID':
+                            raise ValueError(f"Row {row_data.get('row_number')}: All emails must be verified as VALID ({ev.get('email')}).")
+                    
+                    # Prevent duplicate in DB one more time
+                    comp_name = data.get('company_name', '').strip()
+                    if Prospect.objects.filter(company_name__iexact=comp_name).exists():
+                         raise ValueError(f"Row {row_data.get('row_number')}: Duplicate company name {comp_name}")
+                    
+                    # Perform create
+                    prospect = serializer.save(created_by=request.user.username)
+                    created_prospects.append(prospect.id)
+                    
+                    # Create email verification records
+                    for ev in emails_to_verify:
+                        if ev.get('status') == 'VALID':
+                            contact = None
+                            if ev.get('type') == 'contact':
+                                # Find the created ProspectContact with this email and name
+                                contact = prospect.key_contacts.filter(
+                                    contact_name=ev.get('contact_name'), 
+                                    official_email=ev.get('email')
+                                ).first()
+                            
+                            try:
+                                EmailVerification.objects.create(
+                                    prospect=prospect,
+                                    prospect_contact=contact,
+                                    email_address=ev.get('email'),
+                                    verification_status='VALID',
+                                    verified_by=request.user,
+                                    verified_at=timezone.now()
+                                )
+                            except IntegrityError:
+                                # Skip if a duplicate verification record somehow already exists
+                                pass
+                    
+                    # Assign LQ (done in perform_create, but let's make sure)
+                    from .models import assign_lq_to_prospect
+                    assign_lq_to_prospect(prospect)
+                    
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            
+        return Response({'status': 'success', 'imported_count': len(created_prospects)}, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='merge', permission_classes=[IsPRE])
+    def merge(self, request, pk=None):
+        from django.db import transaction
+        company_to_merge_id = request.data.get('merged_company_id')
+        owner_company_id = request.data.get('owner_company_id')
+        
+        if str(pk) != owner_company_id:
+            return Response({'error': 'Owner company ID does not match the URL.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        if owner_company_id == company_to_merge_id:
+            return Response({'error': 'Cannot merge a company with itself.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            owner_company = Prospect.objects.get(id=owner_company_id)
+            merged_company = Prospect.objects.get(id=company_to_merge_id)
+        except Prospect.DoesNotExist:
+            return Response({'error': 'One or both companies not found.'}, status=status.HTTP_404_NOT_FOUND)
+            
+        with transaction.atomic():
+            merged_company.operational_status = Prospect.Status.MERGED
+            merged_company.status_target = owner_company
+            merged_company.save()
+            
+        return Response({'status': 'success'}, status=status.HTTP_200_OK)
 
 class LQPipelineViewSet(viewsets.ModelViewSet):
     serializer_class = LeadQualificationSerializer

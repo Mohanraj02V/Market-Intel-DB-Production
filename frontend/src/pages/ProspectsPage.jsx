@@ -83,15 +83,23 @@ const ProspectsPage = () => {
             Manage your market intelligence prospects, corporate structures, and key contacts.
           </p>
         </div>
-        <div className="mt-4 sm:mt-0">
+        <div className="mt-4 sm:mt-0 flex gap-3">
           {user?.role === 'PRE' && (
-          <button
-            onClick={handleAddClick}
-            className="inline-flex items-center px-4 py-2 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
-          >
-            <Plus className="-ml-1 mr-2 h-5 w-5" aria-hidden="true" />
-            Add Prospect
-          </button>
+            <>
+              <Link
+                to="/prospects/import-preview"
+                className="inline-flex items-center px-4 py-2 border border-slate-300 rounded-xl shadow-sm text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+              >
+                Import Prospects
+              </Link>
+              <button
+                onClick={handleAddClick}
+                className="inline-flex items-center px-4 py-2 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+              >
+                <Plus className="-ml-1 mr-2 h-5 w-5" aria-hidden="true" />
+                Add Prospect
+              </button>
+            </>
           )}
         </div>
       </div>

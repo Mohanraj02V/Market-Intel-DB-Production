@@ -35,6 +35,33 @@ class EmailVerificationViewSet(viewsets.ModelViewSet):
         engine_result = verify_email_engine(email_address)
         return Response({'verification_status': engine_result['status'], 'reason': engine_result['reason']}, status=status.HTTP_200_OK)
 
+    @action(detail=False, methods=['post'], url_path='bulk-verify', permission_classes=[IsPREOrLQ])
+    def bulk_verify(self, request):
+        emails = request.data.get('emails', [])
+        if not isinstance(emails, list):
+            return Response({'error': 'emails must be a list.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        results = []
+        unique_emails = list(set(emails))
+        for email in unique_emails:
+            engine_result = verify_email_engine(email)
+            results.append({
+                'email': email,
+                'verification_status': engine_result['status'],
+                'reason': engine_result['reason'],
+                'syntax_valid': engine_result['syntax_valid'],
+                'domain_valid': engine_result['domain_valid'],
+                'mx_found': engine_result['mx_found'],
+                'smtp_checked': engine_result['smtp_checked'],
+                'smtp_valid': engine_result['smtp_valid'],
+                'is_disposable': engine_result['is_disposable'],
+                'is_role_account': engine_result['is_role_account'],
+                'is_catch_all': engine_result['is_catch_all'],
+            })
+        
+        return Response(results, status=status.HTTP_200_OK)
+
+
     @action(detail=False, methods=['post'], permission_classes=[IsPREOrLQ])
     def verify(self, request):
         prospect_id = request.data.get('prospect_id')

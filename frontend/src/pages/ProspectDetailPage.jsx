@@ -4,7 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { fetchProspectById, clearSelectedProspect } from '../features/prospects/prospectSlice';
 import CorporateStructureTree from '../components/prospects/CorporateStructureTree';
 import api from '../services/api';
-import { ArrowLeft, Building2, Globe, Mail, Phone, MapPin, Network, Package, Users, Calendar } from 'lucide-react';
+import { ArrowLeft, Building2, Globe, Mail, Phone, MapPin, Network, Package, Users, Calendar, Link as LinkIcon } from 'lucide-react';
 
 const ProspectDetailPage = () => {
   const { id } = useParams();
@@ -207,6 +207,25 @@ const ProspectDetailPage = () => {
                       </div>
                     ))}
                   </dd>
+                </div>
+              )}
+              
+              {['Acquired', 'Merged'].includes(p.operational_status) && p.status_target_detail && (
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <dt className="text-xs font-medium text-slate-500 uppercase mb-2">Target / Surviving Company</dt>
+                  <dd className="mb-3">
+                    <Link to={`/prospects/${p.status_target_detail.id}`} className="text-sm font-bold text-indigo-600 hover:underline flex items-center gap-1">
+                      <LinkIcon size={14} /> {p.status_target_detail.company_name}
+                    </Link>
+                  </dd>
+                  {p.merger_role && (
+                    <>
+                      <dt className="text-xs font-medium text-slate-500 uppercase mb-1">Owner Sector</dt>
+                      <dd className="text-sm font-medium text-slate-900">
+                        {p.merger_role === 'Target Company' ? p.status_target_detail.company_name : p.company_name} <span className="text-slate-500 text-xs">({p.merger_role})</span>
+                      </dd>
+                    </>
+                  )}
                 </div>
               )}
             </div>

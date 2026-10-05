@@ -32,9 +32,11 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
     linkedin_company_page: '',
     primary_industries: '',
     company_structure: 'Parent',
+    ownership_sector: 'Private Company',
     operational_status: 'Active',
     parent_companies: [''],
     status_target: '',
+    merger_role: '',
     primary_offering_type: 'Multiple',
     products: [{ name: '' }],
     services: [{ name: '' }],
@@ -59,6 +61,7 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
         ...prospect,
         parent_companies: (prospect.parent_companies && prospect.parent_companies.length > 0) ? prospect.parent_companies : [''],
         status_target: prospect.status_target || '',
+        merger_role: prospect.merger_role || '',
         products: (prospect.products && prospect.products.length > 0) ? prospect.products : [{ name: '' }],
         services: (prospect.services && prospect.services.length > 0) ? prospect.services : [{ name: '' }],
         solutions: (prospect.solutions && prospect.solutions.length > 0) ? prospect.solutions : [{ name: '' }],
@@ -72,8 +75,8 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
         company_name: '', country_head_office: '', complete_address: '',
         official_phone_number: '', official_email_address: '', official_website_url: '',
         linkedin_company_page: '', primary_industries: '',
-        company_structure: 'Parent', operational_status: 'Active',
-        parent_companies: [''], status_target: '', primary_offering_type: 'Multiple',
+        company_structure: 'Parent', ownership_sector: 'Private Company', operational_status: 'Active',
+        parent_companies: [''], status_target: '', merger_role: '', primary_offering_type: 'Multiple',
         products: [{ name: '' }], services: [{ name: '' }], solutions: [{ name: '' }], 
         key_contacts: [{ contact_name: '', designation: '', official_email: '', phone_number: '', linkedin_profile: '' }], market_event_ids: []
       });
@@ -214,9 +217,17 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
     if (!formData.country_head_office) return 'Country is required';
     if (!formData.complete_address) return 'Complete Address is required';
     if (!formData.primary_industries) return 'Primary Industries is required';
+    if (!formData.ownership_sector) return 'Ownership Sector is required';
+    if (!formData.company_structure) return 'Company Structure is required';
+    if (!formData.operational_status) return 'Operational Status is required';
+    if (!formData.primary_offering_type) return 'Primary Offering Type is required';
 
-    if (['Branch', 'Subsidiary'].includes(formData.company_structure) && formData.parent_companies.length === 0) {
+    if (['Branch', 'Subsidiary'].includes(formData.company_structure) && formData.parent_companies.filter(Boolean).length === 0) {
       return `At least one parent company is required for a ${formData.company_structure}`;
+    }
+    
+    if (['Acquired', 'Merged'].includes(formData.operational_status) && !formData.status_target) {
+      return `Target/Surviving Company is required for ${formData.operational_status} status`;
     }
 
     const uniqueParents = new Set(formData.parent_companies.filter(Boolean));
@@ -427,6 +438,21 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
               </div>
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-2">COMPANY TYPE *</label>
+                <SearchableSelect 
+                  value={formData.ownership_sector} 
+                  onChange={(val) => setFormData(prev => ({...prev, ownership_sector: val}))}
+                  options={[
+                    { value: 'Private Company', label: 'Private Company' },
+                    { value: 'Government Company', label: 'Government Company' },
+                    { value: 'Semi Government Company', label: 'Semi Government Company' }
+                  ]}
+                />
+              </div>
+            </div>
+
             {['Branch', 'Subsidiary'].includes(formData.company_structure) && (
               <div className="mt-6 pt-6 border-t border-slate-100">
                 <div className="flex justify-between items-center mb-4">
@@ -456,13 +482,29 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
 
             {['Acquired', 'Merged'].includes(formData.operational_status) && (
               <div className="mt-6 pt-6 border-t border-slate-100">
-                <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-2">TARGET / SURVIVING COMPANY</label>
-                <div className="w-full md:w-1/2"><SearchableSelect 
-                  value={formData.status_target}
-                  onChange={(val) => setFormData(prev => ({...prev, status_target: val}))}
-                  placeholder="Select target company..."
-                  options={targetOptions.map(opt => ({ value: opt.id, label: opt.company_name }))}
-                /></div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-2">TARGET / SURVIVING COMPANY</label>
+                    <SearchableSelect 
+                      value={formData.status_target}
+                      onChange={(val) => setFormData(prev => ({...prev, status_target: val}))}
+                      placeholder="Select target company..."
+                      options={targetOptions.map(opt => ({ value: opt.id, label: opt.company_name }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-2">OWNER SECTOR</label>
+                    <SearchableSelect 
+                      value={formData.merger_role}
+                      onChange={(val) => setFormData(prev => ({...prev, merger_role: val}))}
+                      placeholder="Select sector..."
+                      options={[
+                        { value: 'Target Company', label: 'Target Company' },
+                        { value: 'Entering Company', label: 'Entering Company' }
+                      ]}
+                    />
+                  </div>
+                </div>
               </div>
             )}
           </div>

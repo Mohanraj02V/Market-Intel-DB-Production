@@ -19,7 +19,7 @@ class MarketEventSerializer(serializers.ModelSerializer):
         model = MarketEvent
         fields = [
             'id', 'event_title', 'host_country', 'start_date', 'end_date', 
-            'participating_companies_count', 'participating_companies',
+            'website_url', 'participating_companies_count', 'participating_companies',
             'created_at', 'updated_at', 'created_by', 'updated_by'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
@@ -46,4 +46,4 @@ class MarketEventSimpleSerializer(serializers.ModelSerializer):
     """ Used when nesting Market Events inside Prospect serializer """
     class Meta:
         model = MarketEvent
-        fields = ['id', 'event_title', 'host_country', 'start_date', 'end_date']
+        fields = ['id', 'event_title', 'host_country', 'start_date', 'end_date', 'website_url']

@@ -11,6 +11,7 @@ const MarketEventForm = ({ isOpen, onClose, initialData = null }) => {
     host_country: '',
     start_date: '',
     end_date: '',
+    website_url: '',
   });
 
   const [loading, setLoading] = useState(false);
@@ -24,13 +25,15 @@ const MarketEventForm = ({ isOpen, onClose, initialData = null }) => {
           host_country: initialData.host_country || '',
           start_date: initialData.start_date || '',
           end_date: initialData.end_date || '',
+          website_url: initialData.website_url || '',
         });
       } else {
         setFormData({
           event_title: '',
           host_country: '',
           start_date: '',
-    end_date: '',
+          end_date: '',
+          website_url: '',
         });
       }
       setError(null);
@@ -148,6 +151,20 @@ const MarketEventForm = ({ isOpen, onClose, initialData = null }) => {
                   value={formData.host_country}
                   onChange={handleChange}
                   placeholder="e.g. United States"
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-sm font-medium text-slate-900 placeholder-slate-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                  Website URL
+                </label>
+                <input
+                  type="url"
+                  name="website_url"
+                  value={formData.website_url}
+                  onChange={handleChange}
+                  placeholder="https://example.com"
                   className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-sm font-medium text-slate-900 placeholder-slate-400"
                 />
               </div>
