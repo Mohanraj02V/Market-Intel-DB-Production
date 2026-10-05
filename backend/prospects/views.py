@@ -223,7 +223,10 @@ class ProspectViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='import/blueprint', permission_classes=[IsPRE])
     def import_blueprint(self, request):
-        import csv
+        import io
+        import openpyxl
+        from openpyxl.worksheet.datavalidation import DataValidation
+        from openpyxl.styles import Protection, PatternFill, Font
         from django.http import HttpResponse
         
         headers = [
@@ -234,33 +237,91 @@ class ProspectViewSet(viewsets.ModelViewSet):
             'Market Offerings - Products Offered', 'Market Offerings - Services Provided', 'Market Offerings - Solutions Provided'
         ]
         
-        response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = 'attachment; filename="prospect_import_blueprint.csv"'
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Prospects Import"
         
-        writer = csv.writer(response)
-        writer.writerow(headers)
+        ws.append(headers)
         
-        # Hint row for dropdowns
-        writer.writerow([
-            '', '', '', '', '', '', '', '',
-            '(Parent, Branch, Subsidiary)',
-            '(Active, Inactive, Permanently Closed, Acquired, Merged)',
-            '(Name of existing company)',
-            '(Target Company, Entering Company)',
-            '(Private Company, Government Company, Semi Government Company)',
-            '(Products, Services, Solutions, Multiple)',
-            '', '', '', '', '', '', ''
-        ])
-        
-        # Sample row
-        writer.writerow([
+        # Add a sample row to guide users
+        ws.append([
             'Acme Corp', 'United Arab Emirates', '123 Tech St, Dubai, UAE',
             'Technology', '+971 4 555 0199', 'info@acme.example.com',
             'https://acme.example.com', 'https://linkedin.com/company/acme', 'Parent', 'Active', '', '', 'Private Company', 'Multiple',
             'John Doe', 'CEO', 'john@acme.example.com', '+971 4 555 0101',
             'Enterprise Cloud Servers', 'IT Strategy & Consulting', 'Digital Transformation Package'
         ])
+
+        # Data Validation - Dropdowns
+        dv_structure = DataValidation(type="list", formula1='"Parent,Branch,Subsidiary"', allow_blank=True)
+        ws.add_data_validation(dv_structure)
+        dv_structure.add("I2:I1048576")
+
+        dv_status = DataValidation(type="list", formula1='"Active,Inactive,Permanently Closed,Acquired,Merged"', allow_blank=True)
+        ws.add_data_validation(dv_status)
+        dv_status.add("J2:J1048576")
         
+        dv_owner_sector = DataValidation(type="list", formula1='"Target Company,Entering Company"', allow_blank=True)
+        ws.add_data_validation(dv_owner_sector)
+        dv_owner_sector.add("L2:L1048576")
+
+        dv_company_type = DataValidation(type="list", formula1='"Private Company,Government Company,Semi Government Company"', allow_blank=True)
+        ws.add_data_validation(dv_company_type)
+        dv_company_type.add("M2:M1048576")
+
+        dv_offering = DataValidation(type="list", formula1='"Products,Services,Solutions,Multiple"', allow_blank=True)
+        ws.add_data_validation(dv_offering)
+        dv_offering.add("N2:N1048576")
+        
+        # Data Validation - Emails (contains @)
+        dv_email = DataValidation(type="custom", formula1='ISNUMBER(FIND("@", F2))', allow_blank=True)
+        dv_email.error = 'Please enter a valid email address.'
+        dv_email.errorTitle = 'Invalid Email'
+        ws.add_data_validation(dv_email)
+        dv_email.add("F2:F1048576")
+        
+        dv_contact_email = DataValidation(type="custom", formula1='ISNUMBER(FIND("@", Q2))', allow_blank=True)
+        dv_contact_email.error = 'Please enter a valid email address.'
+        dv_contact_email.errorTitle = 'Invalid Email'
+        ws.add_data_validation(dv_contact_email)
+        dv_contact_email.add("Q2:Q1048576")
+        
+        # Data Validation - URLs (contains http)
+        dv_url = DataValidation(type="custom", formula1='ISNUMBER(FIND("http", G2))', allow_blank=True)
+        dv_url.error = 'Please enter a valid URL starting with http.'
+        dv_url.errorTitle = 'Invalid URL'
+        ws.add_data_validation(dv_url)
+        dv_url.add("G2:G1048576")
+        
+        dv_linkedin = DataValidation(type="custom", formula1='ISNUMBER(FIND("http", H2))', allow_blank=True)
+        dv_linkedin.error = 'Please enter a valid URL starting with http.'
+        dv_linkedin.errorTitle = 'Invalid URL'
+        ws.add_data_validation(dv_linkedin)
+        dv_linkedin.add("H2:H1048576")
+
+        # Protect headers
+        ws.protection.sheet = True
+        
+        header_fill = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
+        header_font = Font(bold=True)
+        
+        for idx, cell in enumerate(ws[1]):
+            cell.protection = Protection(locked=True)
+            cell.fill = header_fill
+            cell.font = header_font
+            ws.column_dimensions[cell.column_letter].width = 25
+            
+        # Unlock data rows so users can type
+        for row in ws.iter_rows(min_row=2, max_row=1000):
+            for cell in row:
+                cell.protection = Protection(locked=False)
+
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        
+        response = HttpResponse(output.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = 'attachment; filename="prospect_import_blueprint.xlsx"'
         return response
 
     @action(detail=False, methods=['post'], url_path='import/headers', permission_classes=[IsPRE])

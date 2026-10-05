@@ -4,7 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import api from '../services/api';
 import { toast } from 'react-toastify';
 import { fetchProspects } from '../features/prospects/prospectSlice';
-import { ArrowLeft, Upload, CheckCircle, XCircle, AlertTriangle, Download } from 'lucide-react';
+import { ArrowLeft, Upload, CheckCircle, XCircle, AlertTriangle, Download, AlertCircle } from 'lucide-react';
 
 const ImportPreviewPage = () => {
   const dispatch = useDispatch();
@@ -304,7 +304,7 @@ const ImportPreviewPage = () => {
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', 'prospect_import_blueprint.csv');
+      link.setAttribute('download', 'prospect_import_blueprint.xlsx');
       document.body.appendChild(link);
       link.click();
       link.parentNode.removeChild(link);
@@ -440,27 +440,57 @@ const ImportPreviewPage = () => {
                       )}
                     </td>
                     
-                    {Object.keys(mapping).filter(k => mapping[k] !== '').map(key => (
-                      <td key={key} className="px-4 py-3 whitespace-nowrap text-sm font-medium text-slate-900 max-w-[200px] truncate" title={row.data[key]}>
-                        {key === 'official_email_address' ? (
-                          <input type="email" value={row.emails_to_verify?.find(e => e.type === 'company')?.email || ''} onChange={(e) => {
-                            const evIdx = row.emails_to_verify?.findIndex(ev => ev.type === 'company');
-                            if (evIdx !== -1) handleEmailChange(index, evIdx, e.target.value);
-                          }} className="border border-slate-300 rounded px-2 py-1 text-sm w-48 font-normal" />
-                        ) : key === 'contact_email' ? (
-                          <div className="space-y-2">
-                             {row.emails_to_verify?.filter(e => e.type === 'contact').map((ev, evIdxObj) => {
-                                const actualEvIdx = row.emails_to_verify.indexOf(ev);
-                                return (
-                                  <input key={actualEvIdx} type="email" value={ev.email} onChange={(e) => handleEmailChange(index, actualEvIdx, e.target.value)} className="border border-slate-300 rounded px-2 py-1 text-sm w-48 font-normal block" title={`Contact: ${ev.contact_name}`} />
-                                );
-                             })}
-                          </div>
-                        ) : (
-                          row.data[key]
-                        )}
-                      </td>
-                    ))}
+                    {Object.keys(mapping).filter(k => mapping[k] !== '').map(key => {
+                      const field = FIELD_GROUPS.flatMap(g => g.fields).find(f => f.key === key);
+                      const isMissingRequired = field?.required && !row.data[key];
+                      const isDuplicate = key === 'company_name' && row.errors?.some(e => e.includes('Duplicate'));
+                      
+                      let cellClass = "px-4 py-3 whitespace-nowrap text-sm font-medium max-w-[200px] truncate ";
+                      if (isMissingRequired) cellClass += "bg-red-50/50 ";
+                      else if (isDuplicate) cellClass += "bg-amber-50/50 ";
+                      else cellClass += "text-slate-900 ";
+
+                      return (
+                        <td key={key} className={cellClass} title={row.data[key]}>
+                          {key === 'official_email_address' ? (
+                            <input type="email" value={row.emails_to_verify?.find(e => e.type === 'company')?.email || ''} onChange={(e) => {
+                              const evIdx = row.emails_to_verify?.findIndex(ev => ev.type === 'company');
+                              if (evIdx !== -1) handleEmailChange(index, evIdx, e.target.value);
+                            }} className="border border-slate-300 rounded px-2 py-1 text-sm w-48 font-normal bg-white text-slate-900 focus:ring-1 focus:ring-indigo-500" />
+                          ) : key === 'contact_email' ? (
+                            <div className="space-y-2">
+                               {row.emails_to_verify?.filter(e => e.type === 'contact').map((ev, evIdxObj) => {
+                                  const actualEvIdx = row.emails_to_verify.indexOf(ev);
+                                  return (
+                                    <input key={actualEvIdx} type="email" value={ev.email} onChange={(e) => handleEmailChange(index, actualEvIdx, e.target.value)} className="border border-slate-300 rounded px-2 py-1 text-sm w-48 font-normal block bg-white text-slate-900 focus:ring-1 focus:ring-indigo-500" title={`Contact: ${ev.contact_name}`} />
+                                  );
+                               })}
+                            </div>
+                          ) : key === 'company_structure' && row.data[key] ? (
+                            <span className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-100">{row.data[key]}</span>
+                          ) : key === 'operational_status' && row.data[key] ? (
+                            <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold border ${
+                              ['Active', 'Operating'].includes(row.data[key]) ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                              ['Merged', 'Acquired'].includes(row.data[key]) ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                              'bg-slate-50 text-slate-600 border-slate-200'
+                            }`}>{row.data[key]}</span>
+                          ) : isMissingRequired ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 bg-red-50 px-2 py-1 rounded-md border border-red-200">
+                              <AlertCircle size={12} /> REQUIRED
+                            </span>
+                          ) : isDuplicate ? (
+                            <div className="flex items-center gap-1.5 text-amber-700 font-semibold">
+                              <AlertCircle size={14} className="text-amber-500 shrink-0" />
+                              <span className="truncate">{row.data[key]}</span>
+                            </div>
+                          ) : row.data[key] ? (
+                            row.data[key]
+                          ) : (
+                            <span className="text-slate-300">-</span>
+                          )}
+                        </td>
+                      );
+                    })}
                     <td className="px-4 py-3 text-sm">
                       <div className="space-y-2">
                       {row.emails_to_verify?.map((ev, i) => (
