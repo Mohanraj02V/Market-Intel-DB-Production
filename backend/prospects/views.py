@@ -495,14 +495,7 @@ class ProspectViewSet(viewsets.ModelViewSet):
                     
                     data = row_data.get('data', {})
                     
-                    target_name = data.get('status_target')
-                    if target_name:
-                        target_prospect = Prospect.objects.filter(company_name__iexact=str(target_name).strip()).first()
-                        if target_prospect:
-                            data['status_target'] = target_prospect.id
-                        else:
-                            raise ValueError(f"Row {row_data.get('row_number')}: Target / Surviving Company '{target_name}' not found in the database.")
-                    
+
                     serializer = self.get_serializer(data=data, context={'request': request, 'is_import': True})
                     if not serializer.is_valid():
                         def format_errors(errors_dict, prefix=""):
@@ -596,7 +589,6 @@ class ProspectViewSet(viewsets.ModelViewSet):
             
         with transaction.atomic():
             merged_company.operational_status = Prospect.Status.MERGED
-            merged_company.status_target = owner_company
             merged_company.save()
             
         return Response({'status': 'success'}, status=status.HTTP_200_OK)

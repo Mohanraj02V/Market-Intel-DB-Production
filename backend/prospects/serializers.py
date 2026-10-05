@@ -51,13 +51,12 @@ class ProspectContactSerializer(serializers.ModelSerializer):
 class ProspectSimpleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Prospect
-        fields = ['id', 'company_name', 'country_head_office', 'primary_industries', 'company_structure', 'operational_status', 'ownership_sector', 'merger_role']
+        fields = ['id', 'company_name', 'country_head_office', 'primary_industries', 'company_structure', 'operational_status', 'ownership_sector']
 
 class ProspectSerializer(serializers.ModelSerializer):
     parent_companies_detail = ProspectSimpleSerializer(source='parent_companies', many=True, read_only=True)
     child_companies_detail = ProspectSimpleSerializer(source='child_companies', many=True, read_only=True)
-    status_target_detail = ProspectSimpleSerializer(source='status_target', read_only=True)
-    acquired_or_merged_from_detail = ProspectSimpleSerializer(source='acquired_or_merged_from', many=True, read_only=True)
+
     products = serializers.SerializerMethodField()
     services = serializers.SerializerMethodField()
     solutions = serializers.SerializerMethodField()
@@ -100,12 +99,12 @@ class ProspectSerializer(serializers.ModelSerializer):
             'id', 'company_name', 'country_head_office', 'complete_address',
             'official_phone_number', 'official_email_address', 'official_website_url',
             'linkedin_company_page', 'primary_industries', 'company_structure',
-            'operational_status', 'ownership_sector', 'parent_companies', 'parent_companies_detail', 'child_companies_detail', 'status_target', 'status_target_detail', 'acquired_or_merged_from_detail', 'merger_role',
+            'operational_status', 'ownership_sector', 'parent_companies', 'parent_companies_detail', 'child_companies_detail',
             'primary_offering_type', 'products', 'services', 'solutions',
             'offerings_data', 'key_contacts', 'created_at', 'updated_at',
             'created_by', 'updated_by', 'market_events', 'market_event_ids', 'company_email_verification_status', 'qualification_status', 'pre_task_status', 'audit_reverify_fields'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by', 'market_events', 'market_event_ids', 'company_email_verification_status', 'qualification_status', 'pre_task_status', 'audit_reverify_fields', 'status_target_detail', 'acquired_or_merged_from_detail']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by', 'market_events', 'market_event_ids', 'company_email_verification_status', 'qualification_status', 'pre_task_status', 'audit_reverify_fields']
 
     def get_company_email_verification_status(self, obj):
         if not obj.official_email_address:
@@ -136,7 +135,7 @@ class ProspectSerializer(serializers.ModelSerializer):
         structure = data.get('company_structure')
         parent_companies = data.get('parent_companies', [])
         status = data.get('operational_status')
-        status_target = data.get('status_target')
+
         is_import = self.context.get('is_import', False)
 
         # Branch and Subsidiary require parent (skip if importing via CSV)
@@ -144,9 +143,6 @@ class ProspectSerializer(serializers.ModelSerializer):
             if not parent_companies and not is_import:
                 raise serializers.ValidationError({"parent_companies": "At least one parent company is required for Branch or Subsidiary."})
 
-        # Acquired/Merged target validation
-        if status in [Prospect.Status.ACQUIRED, Prospect.Status.MERGED]:
-            pass  # Target is optional
 
         # Self-parent prevention
         if self.instance and self.instance in parent_companies:

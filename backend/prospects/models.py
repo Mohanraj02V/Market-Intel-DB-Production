@@ -29,9 +29,7 @@ class Prospect(models.Model):
         GOVERNMENT = 'Government Company', 'Government Company'
         SEMI_GOVERNMENT = 'Semi Government Company', 'Semi Government Company'
 
-    class MergerRole(models.TextChoices):
-        TARGET = 'Target Company', 'Target Company'
-        ENTERING = 'Entering Company', 'Entering Company'
+
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     company_name = models.CharField(max_length=255)
@@ -49,8 +47,6 @@ class Prospect(models.Model):
     operational_status = models.CharField(max_length=50, choices=Status.choices)
 
     parent_companies = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='child_companies')
-    status_target = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='acquired_or_merged_from')
-    merger_role = models.CharField(max_length=50, choices=MergerRole.choices, blank=True, null=True)
 
     ownership_sector = models.CharField(max_length=50, choices=OwnershipSector.choices, default=OwnershipSector.PRIVATE)
     primary_offering_type = models.CharField(max_length=50, choices=OfferingType.choices)

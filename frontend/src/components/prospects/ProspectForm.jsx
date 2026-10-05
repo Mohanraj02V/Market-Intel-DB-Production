@@ -226,9 +226,7 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
       return `At least one parent company is required for a ${formData.company_structure}`;
     }
     
-    if (['Acquired', 'Merged'].includes(formData.operational_status) && !formData.status_target) {
-      return `Target/Surviving Company is required for ${formData.operational_status} status`;
-    }
+
 
     const uniqueParents = new Set(formData.parent_companies.filter(Boolean));
     if (uniqueParents.size !== formData.parent_companies.filter(Boolean).length) {
