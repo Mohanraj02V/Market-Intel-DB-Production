@@ -4,7 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import api from '../services/api';
 import { toast } from 'react-toastify';
 import { fetchProspects } from '../features/prospects/prospectSlice';
-import { ArrowLeft, Upload, CheckCircle, XCircle, AlertTriangle, Download, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Upload, CheckCircle, XCircle, AlertTriangle, Download, AlertCircle, Trash2 } from 'lucide-react';
 
 const ImportPreviewPage = () => {
   const dispatch = useDispatch();
@@ -250,6 +250,10 @@ const ImportPreviewPage = () => {
     });
   };
 
+  const handleRemoveRow = (indexToRemove) => {
+    setPreviewData(prev => prev.filter((_, index) => index !== indexToRemove));
+  };
+
   const handleConfirmImport = async () => {
     const invalidRows = previewData.filter(row => {
       if (row.validation_status !== 'VALID') return true;
@@ -426,6 +430,7 @@ const ImportPreviewPage = () => {
                   
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">Email Verification</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">Errors</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-200">
@@ -509,6 +514,15 @@ const ImportPreviewPage = () => {
                     </td>
                     <td className="px-4 py-3 text-sm text-red-600">
                       {row.errors.map((err, i) => <div key={i}>• {err}</div>)}
+                    </td>
+                    <td className="px-4 py-3 text-center whitespace-nowrap">
+                      <button
+                        onClick={() => handleRemoveRow(index)}
+                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                        title="Remove Row"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </td>
                   </tr>
                 ))}

@@ -301,6 +301,7 @@ class ProspectViewSet(viewsets.ModelViewSet):
 
         # Protect headers
         ws.protection.sheet = True
+        ws.protection.password = "MarketIntel2026!"
         
         header_fill = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
         header_font = Font(bold=True)
