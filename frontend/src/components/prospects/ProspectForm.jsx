@@ -50,7 +50,7 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
       // Fetch all prospects for parent/target dropdowns
       api.get('/prospects/?limit=1000').then(res => {
         const options = res.data.results || res.data;
-        setParentOptions(options.filter(p => p.id !== prospect?.id && p.company_structure === 'Parent'));
+        setParentOptions(options.filter(p => p.id !== prospect?.id));
         setTargetOptions(options.filter(p => p.id !== prospect?.id));
       });
     }
@@ -480,33 +480,6 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
               </div>
             )}
 
-            {['Acquired', 'Merged'].includes(formData.operational_status) && (
-              <div className="mt-6 pt-6 border-t border-slate-100">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-2">TARGET / SURVIVING COMPANY</label>
-                    <SearchableSelect 
-                      value={formData.status_target}
-                      onChange={(val) => setFormData(prev => ({...prev, status_target: val}))}
-                      placeholder="Select target company..."
-                      options={targetOptions.map(opt => ({ value: opt.id, label: opt.company_name }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-2">OWNER SECTOR</label>
-                    <SearchableSelect 
-                      value={formData.merger_role}
-                      onChange={(val) => setFormData(prev => ({...prev, merger_role: val}))}
-                      placeholder="Select sector..."
-                      options={[
-                        { value: 'Target Company', label: 'Target Company' },
-                        { value: 'Entering Company', label: 'Entering Company' }
-                      ]}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Section 2: General Information */}

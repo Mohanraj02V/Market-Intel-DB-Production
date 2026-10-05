@@ -73,9 +73,9 @@ const CorporateStructureTree = ({ prospect }) => {
         </div>
         
         {parents.length > 0 ? (
-          <div className="flex flex-wrap justify-center gap-4 relative z-10 w-full max-w-2xl">
+          <div className="flex flex-row justify-center gap-6 relative z-10 w-full overflow-x-auto pb-2">
             {parents.map(p => (
-              <div key={p.id} className="w-full sm:w-64">
+              <div key={p.id} className="w-64 shrink-0">
                 <MiniCard company={p} badgeLabel="Parent" badgeColor="bg-indigo-600" />
               </div>
             ))}
