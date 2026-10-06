@@ -494,3 +494,33 @@ class GovernmentEntity(models.Model):
 
     def __str__(self):
         return f"{self.name} ({'State' if self.is_state_government else 'Central'})"
+
+
+class ProspectImportHistory(models.Model):
+    """Lightweight record of a Prospect Excel/CSV import (no file storage)."""
+    class Status(models.TextChoices):
+        COMPLETED = 'COMPLETED', 'Completed'
+        PARTIAL = 'PARTIAL', 'Partial'
+        FAILED = 'FAILED', 'Failed'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='prospect_imports')
+    file_name = models.CharField(max_length=255, blank=True, default='')
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.COMPLETED)
+    processed_source_rows = models.PositiveIntegerField(default=0)
+    imported_count = models.PositiveIntegerField(default=0)
+    not_imported_count = models.PositiveIntegerField(default=0)
+    parent_auto_created_count = models.PositiveIntegerField(default=0)
+    limit_reached = models.BooleanField(default=False)
+    # [{source_row_numbers, company_name, prospect_id}]
+    imported_rows = models.JSONField(default=list, blank=True)
+    # [{source_row_numbers, company_name, reason}]
+    not_imported_rows = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Import {self.file_name} ({self.status})"
