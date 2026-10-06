@@ -49,6 +49,8 @@ class Prospect(models.Model):
     parent_companies = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='child_companies')
     merging_companies = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='merged_into_prospects')
     dissolved_companies = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='dissolved_into_prospects')
+    acquiring_company = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='acquired_companies')
+    acquired_shares = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
 
     ownership_sector = models.CharField(max_length=50, choices=OwnershipSector.choices, default=OwnershipSector.PRIVATE)
     primary_offering_type = models.CharField(max_length=50, choices=OfferingType.choices)
@@ -81,6 +83,7 @@ class ProspectOffering(models.Model):
 class ProspectContact(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     prospect = models.ForeignKey(Prospect, on_delete=models.CASCADE, related_name='key_contacts')
+    prefix = models.CharField(max_length=50, blank=True, null=True)
     contact_name = models.CharField(max_length=255)
     designation = models.CharField(max_length=255, blank=True, null=True)
     official_email = models.EmailField(blank=True, null=True)
@@ -367,6 +370,8 @@ class ProspectShareholding(models.Model):
     class HolderType(models.TextChoices):
         COMPANY = "Company", "Company"
         INDIVIDUAL = "Individual", "Individual"
+        GOVERNMENT = "Government", "Country or State"
+        OTHER = "Other", "Others"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
@@ -397,6 +402,20 @@ class ProspectShareholding(models.Model):
         related_name="shareholdings"
     )
 
+    government_entity = models.ForeignKey(
+        'GovernmentEntity',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="shareholdings"
+    )
+
+    other_name = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True
+    )
+
     share_percentage = models.DecimalField(
         max_digits=5,
         decimal_places=2
@@ -409,15 +428,27 @@ class ProspectShareholding(models.Model):
         if self.holder_type == self.HolderType.COMPANY:
             if not self.company:
                 raise ValidationError("Company is required when holder_type is Company.")
-            if self.contact:
-                raise ValidationError("Contact must be null when holder_type is Company.")
-            if self.prospect == self.company:
-                raise ValidationError("A prospect cannot be its own shareholder.")
+            self.contact = None
+            self.government_entity = None
+            self.other_name = None
         elif self.holder_type == self.HolderType.INDIVIDUAL:
             if not self.contact:
                 raise ValidationError("Contact is required when holder_type is Individual.")
-            if self.company:
-                raise ValidationError("Company must be null when holder_type is Individual.")
+            self.company = None
+            self.government_entity = None
+            self.other_name = None
+        elif self.holder_type == self.HolderType.GOVERNMENT:
+            if not self.government_entity:
+                raise ValidationError("Government Entity is required when holder_type is Government.")
+            self.company = None
+            self.contact = None
+            self.other_name = None
+        elif self.holder_type == self.HolderType.OTHER:
+            if not self.other_name:
+                raise ValidationError("Name is required when holder_type is Other.")
+            self.company = None
+            self.contact = None
+            self.government_entity = None
 
     def save(self, *args, **kwargs):
         self.clean()
@@ -428,4 +459,38 @@ class ProspectShareholding(models.Model):
             return f"{self.company.company_name} - {self.share_percentage}%"
         elif self.holder_type == self.HolderType.INDIVIDUAL and self.contact:
             return f"{self.contact.contact_name} - {self.share_percentage}%"
+        elif self.holder_type == self.HolderType.GOVERNMENT and self.government_entity:
+            return f"{self.government_entity.name} - {self.share_percentage}%"
+        elif self.holder_type == self.HolderType.OTHER and self.other_name:
+            return f"{self.other_name} - {self.share_percentage}%"
         return f"Shareholding {self.id} - {self.share_percentage}%"
+
+class GovernmentEntity(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=255)
+    country = models.CharField(max_length=255)
+    
+    is_state_government = models.BooleanField(default=False)
+    state_name = models.CharField(max_length=255, blank=True, null=True)
+    # A state government belongs to a central government
+    central_government = models.ForeignKey(
+        'self', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='state_entities',
+        limit_choices_to={'is_state_government': False}
+    )
+
+    official_website = models.URLField(blank=True, null=True)
+    official_email = models.EmailField(blank=True, null=True)
+    phone_number = models.CharField(max_length=255, blank=True, null=True)
+    complete_address = models.TextField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.CharField(max_length=255, blank=True, null=True)
+    updated_by = models.CharField(max_length=255, blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.name} ({'State' if self.is_state_government else 'Central'})"

@@ -1,8 +1,8 @@
 import { createSlice } from '@reduxjs/toolkit';
 
-// Use sessionStorage so tokens are cleared when the browser tab/window is closed.
-// This reduces the risk of stale sessions in shared environments.
-const _storage = sessionStorage;
+// Use localStorage so tokens are shared across multiple tabs.
+// The session timeout is now enforced purely by the backend token expiration.
+const _storage = localStorage;
 
 const initialState = {
   user: null,

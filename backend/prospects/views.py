@@ -7,8 +7,8 @@ from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.permissions import IsAuthenticated
-from .models import Prospect, ProspectOffering, ProspectContact, LeadQualification, EmailVerification, AuditReverificationRequest
-from .serializers import ProspectSerializer, LeadQualificationSerializer, ProspectContactSerializer, AuditReverificationRequestSerializer
+from .models import Prospect, ProspectOffering, ProspectContact, LeadQualification, EmailVerification, AuditReverificationRequest, GovernmentEntity
+from .serializers import ProspectSerializer, LeadQualificationSerializer, ProspectContactSerializer, AuditReverificationRequestSerializer, GovernmentEntitySerializer
 
 def apply_lq_distribution_filter(queryset, user, prospect_field_prefix=''):
     """
@@ -39,6 +39,36 @@ def apply_lq_distribution_filter(queryset, user, prospect_field_prefix=''):
             
         return queryset.filter(**filter_kwargs)
     return queryset.none()
+
+class GovernmentEntityViewSet(viewsets.ModelViewSet):
+    serializer_class = GovernmentEntitySerializer
+    permission_classes = [IsPRE]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['is_state_government', 'country']
+    search_fields = ['name', 'country']
+    ordering_fields = ['name', 'created_at']
+
+    def get_queryset(self):
+        queryset = GovernmentEntity.objects.all().select_related('central_government').order_by('-updated_at')
+        user = self.request.user
+        if not user.is_superuser and hasattr(user, 'profile'):
+            role = user.profile.role
+            if role == 'PRE':
+                queryset = queryset.filter(created_by=user.username)
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        name = request.data.get('name')
+        country = request.data.get('country')
+        if name and country and GovernmentEntity.objects.filter(name__iexact=name.strip(), country__iexact=country.strip()).exists():
+            return Response(
+                {'error': 'A government entity with this name and country already exists.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return super().create(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user.username)
 
 class ProspectViewSet(viewsets.ModelViewSet):
     serializer_class = ProspectSerializer

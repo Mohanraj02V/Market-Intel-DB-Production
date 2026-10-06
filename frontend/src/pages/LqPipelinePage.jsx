@@ -51,8 +51,32 @@ const LqPipelinePage = ({ filter = 'all' }) => {
     sessionStorage.setItem(`lqPipelineEndDate_${userId}`, endDate);
   }, [startDate, endDate, user]);
   
-  const [selectedLq, setSelectedLq] = useState(null);
-  const [showWorkspace, setShowWorkspace] = useState(false);
+  const [selectedLq, setSelectedLq] = useState(() => {
+    const userId = user?.id || 'default';
+    const saved = sessionStorage.getItem(`lqPipelineEditing_${userId}`);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch(e) {}
+    }
+    return null;
+  });
+  
+  const [showWorkspace, setShowWorkspace] = useState(() => {
+    const userId = user?.id || 'default';
+    return sessionStorage.getItem(`lqPipelineFormOpen_${userId}`) === 'true';
+  });
+
+  useEffect(() => {
+    const userId = user?.id || 'default';
+    sessionStorage.setItem(`lqPipelineFormOpen_${userId}`, showWorkspace);
+    if (selectedLq) {
+      sessionStorage.setItem(`lqPipelineEditing_${userId}`, JSON.stringify(selectedLq));
+    } else {
+      sessionStorage.removeItem(`lqPipelineEditing_${userId}`);
+    }
+  }, [showWorkspace, selectedLq, user]);
+
   const [verificationFields, setVerificationFields] = useState({
     companyName: null,
     country: null,

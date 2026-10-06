@@ -1,12 +1,30 @@
 from market_events.serializers import MarketEventSimpleSerializer
 from rest_framework import serializers
-from .models import Prospect, ProspectOffering, ProspectContact, AuditReverificationRequest, ProspectShareholding
+from .models import Prospect, ProspectOffering, ProspectContact, AuditReverificationRequest, ProspectShareholding, GovernmentEntity
 
 class ProspectOfferingSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProspectOffering
         fields = ['id', 'offering_type', 'name', 'display_order', 'created_at']
         read_only_fields = ['id', 'created_at']
+
+class GovernmentEntitySimpleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GovernmentEntity
+        fields = ['id', 'name', 'country', 'is_state_government']
+
+class GovernmentEntitySerializer(serializers.ModelSerializer):
+    central_government_detail = GovernmentEntitySimpleSerializer(source='central_government', read_only=True)
+
+    class Meta:
+        model = GovernmentEntity
+        fields = [
+            'id', 'name', 'country', 'is_state_government', 'state_name', 'central_government',
+            'central_government_detail', 'official_website', 'official_email',
+            'phone_number', 'complete_address', 'created_at', 'updated_at',
+            'created_by', 'updated_by'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
 
 class ProspectContactSerializer(serializers.ModelSerializer):
     prospect_name = serializers.CharField(source='prospect.company_name', read_only=True)
@@ -45,18 +63,20 @@ class ProspectContactSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ProspectContact
-        fields = ['id', 'prospect', 'prospect_name', 'contact_name', 'designation', 'official_email', 'phone_number', 'linkedin_profile', 'latest_call_status', 'latest_communication_outcome', 'email_verification_status', 'email_verification_id', 'created_at', 'updated_at']
+        fields = ['id', 'prospect', 'prospect_name', 'prefix', 'contact_name', 'designation', 'official_email', 'phone_number', 'linkedin_profile', 'latest_call_status', 'latest_communication_outcome', 'email_verification_status', 'email_verification_id', 'created_at', 'updated_at']
         read_only_fields = ['id', 'prospect', 'prospect_name', 'latest_call_status', 'latest_communication_outcome', 'email_verification_status', 'email_verification_id', 'created_at', 'updated_at']
 
 class ProspectShareholdingSerializer(serializers.ModelSerializer):
     company_name = serializers.CharField(source='company.company_name', read_only=True)
     individual_name = serializers.CharField(source='contact.contact_name', read_only=True)
+    government_entity_name = serializers.CharField(source='government_entity.name', read_only=True)
     contact_index = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    is_self = serializers.BooleanField(write_only=True, required=False, default=False)
 
     class Meta:
         model = ProspectShareholding
-        fields = ['id', 'holder_type', 'company', 'company_name', 'contact', 'individual_name', 'share_percentage', 'contact_index']
-        read_only_fields = ['id', 'company_name', 'individual_name']
+        fields = ['id', 'holder_type', 'company', 'company_name', 'contact', 'individual_name', 'government_entity', 'government_entity_name', 'other_name', 'share_percentage', 'contact_index', 'is_self']
+        read_only_fields = ['id', 'company_name', 'individual_name', 'government_entity_name']
 
 class ProspectSimpleSerializer(serializers.ModelSerializer):
     class Meta:
@@ -70,6 +90,8 @@ class ProspectSerializer(serializers.ModelSerializer):
     dissolved_companies_detail = ProspectSimpleSerializer(source='dissolved_companies', many=True, read_only=True)
     merged_into_prospects_detail = ProspectSimpleSerializer(source='merged_into_prospects', many=True, read_only=True)
     dissolved_into_prospects_detail = ProspectSimpleSerializer(source='dissolved_into_prospects', many=True, read_only=True)
+    acquiring_company_detail = ProspectSimpleSerializer(source='acquiring_company', read_only=True)
+    acquired_companies_detail = ProspectSimpleSerializer(source='acquired_companies', many=True, read_only=True)
 
     products = serializers.SerializerMethodField()
     services = serializers.SerializerMethodField()
@@ -117,6 +139,7 @@ class ProspectSerializer(serializers.ModelSerializer):
             'operational_status', 'ownership_sector', 'parent_companies', 'parent_companies_detail', 'child_companies_detail',
             'merging_companies', 'merging_companies_detail', 'dissolved_companies', 'dissolved_companies_detail',
             'merged_into_prospects_detail', 'dissolved_into_prospects_detail',
+            'acquiring_company', 'acquiring_company_detail', 'acquired_shares', 'acquired_companies_detail',
             'primary_offering_type', 'products', 'services', 'solutions',
             'offerings_data', 'key_contacts', 'shareholdings', 'created_at', 'updated_at',
             'created_by', 'updated_by', 'market_events', 'market_event_ids', 'company_email_verification_status', 'qualification_status', 'pre_task_status', 'audit_reverify_fields'
@@ -212,9 +235,12 @@ class ProspectSerializer(serializers.ModelSerializer):
             
         for sh_data in shareholdings_data:
             contact_index = sh_data.pop('contact_index', None)
+            is_self = sh_data.pop('is_self', False)
             if sh_data.get('holder_type') == 'Individual' and contact_index is not None:
                 if 0 <= contact_index < len(created_contacts):
                     sh_data['contact'] = created_contacts[contact_index]
+            if sh_data.get('holder_type') == 'Company' and is_self:
+                sh_data['company'] = prospect
             ProspectShareholding.objects.create(prospect=prospect, **sh_data)
 
         # Always assign an LQ user immediately after creation.
@@ -277,6 +303,11 @@ class ProspectSerializer(serializers.ModelSerializer):
             instance.merging_companies.clear()
             instance.dissolved_companies.clear()
 
+        if instance.operational_status != Prospect.Status.ACQUIRED:
+            instance.acquiring_company = None
+            instance.acquired_shares = None
+            instance.save(update_fields=['acquiring_company', 'acquired_shares'])
+
         if offerings_data is not None:
             instance.offerings.all().delete()
             for offering in offerings_data:
@@ -320,9 +351,12 @@ class ProspectSerializer(serializers.ModelSerializer):
                     raw_id = str(raw_shareholdings[i].get('id', ''))
                 
                 contact_index = sh_data.pop('contact_index', None)
+                is_self = sh_data.pop('is_self', False)
                 if sh_data.get('holder_type') == 'Individual' and not sh_data.get('contact') and contact_index is not None:
                     if 0 <= contact_index < len(current_contacts):
                         sh_data['contact'] = current_contacts[contact_index]
+                if sh_data.get('holder_type') == 'Company' and is_self:
+                    sh_data['company'] = instance
 
                 if raw_id and raw_id in existing_sh:
                     sh_inst = existing_sh[raw_id]

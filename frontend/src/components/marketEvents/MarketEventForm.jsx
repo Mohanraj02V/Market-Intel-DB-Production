@@ -1,40 +1,55 @@
-import React, { useState, useEffect } from 'react';
-import { useDispatch } from 'react-redux';
+import React, { useState, useEffect, useRef } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import { X } from 'lucide-react';
 import { createMarketEvent, updateMarketEvent } from '../../features/marketEvents/marketEventSlice';
 
 const MarketEventForm = ({ isOpen, onClose, initialData = null }) => {
   const dispatch = useDispatch();
+  const { user } = useSelector((state) => state.auth);
+  const wasEditingRef = useRef(false);
   
-  const [formData, setFormData] = useState({
+  const initialEmptyState = {
     event_title: '',
     host_country: '',
     start_date: '',
     end_date: '',
     website_url: '',
+  };
+
+  const [formData, setFormData] = useState(() => {
+    const userId = user?.id || 'default';
+    const saved = sessionStorage.getItem(`marketEventFormData_${userId}`);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch(e) {}
+    }
+    return initialEmptyState;
   });
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (isOpen) {
-      if (initialData) {
-        setFormData({
-          event_title: initialData.event_title || '',
-          host_country: initialData.host_country || '',
-          start_date: initialData.start_date || '',
-          end_date: initialData.end_date || '',
-          website_url: initialData.website_url || '',
-        });
-      } else {
-        setFormData({
-          event_title: '',
-          host_country: '',
-          start_date: '',
-          end_date: '',
-          website_url: '',
-        });
+    const userId = user?.id || 'default';
+    sessionStorage.setItem(`marketEventFormData_${userId}`, JSON.stringify(formData));
+  }, [formData, user]);
+
+  useEffect(() => {
+    if (initialData && isOpen) {
+      wasEditingRef.current = true;
+      setFormData({
+        event_title: initialData.event_title || '',
+        host_country: initialData.host_country || '',
+        start_date: initialData.start_date || '',
+        end_date: initialData.end_date || '',
+        website_url: initialData.website_url || '',
+      });
+      setError(null);
+    } else if (isOpen) {
+      if (wasEditingRef.current) {
+        setFormData(initialEmptyState);
+        wasEditingRef.current = false;
       }
       setError(null);
     }
@@ -58,6 +73,7 @@ const MarketEventForm = ({ isOpen, onClose, initialData = null }) => {
         await dispatch(updateMarketEvent({ id: initialData.id, data: formData })).unwrap();
       } else {
         await dispatch(createMarketEvent(formData)).unwrap();
+        setFormData(initialEmptyState);
       }
       onClose();
     } catch (err) {

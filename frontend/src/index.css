@@ -30,3 +30,7 @@
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 transparent;
 }
+
+.PhoneInputInput {
+  @apply bg-transparent outline-none w-full ml-2;
+}

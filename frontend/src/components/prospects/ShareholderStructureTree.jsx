@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
-import { Building2, User, MapPin, Link as LinkIcon, AlertCircle, Briefcase } from 'lucide-react';
+import { Building2, User, MapPin, Link as LinkIcon, Maximize2, Minimize2, Landmark, HelpCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const ShareholderStructureTree = ({ prospect }) => {
-  const [activeTab, setActiveTab] = useState('Company'); // 'Company' | 'Individual'
+  const [isFullScreen, setIsFullScreen] = useState(false);
   
   if (!prospect || !prospect.shareholdings) return null;
 
-  const companyHolders = prospect.shareholdings.filter(s => s.holder_type === 'Company');
-  const individualHolders = prospect.shareholdings.filter(s => s.holder_type === 'Individual');
+  const allHolders = prospect.shareholdings;
+
+  const toggleFullScreen = () => {
+    setIsFullScreen(!isFullScreen);
+  };
 
   const CompanyCard = ({ company, glow = false }) => (
     <div className={`relative p-5 rounded-xl border ${glow ? 'bg-slate-900 border-indigo-500 shadow-[0_0_20px_rgba(99,102,241,0.4)]' : 'bg-slate-800/80 border-slate-700/50 hover:bg-slate-800'} transition-all`}>
@@ -28,78 +31,82 @@ const ShareholderStructureTree = ({ prospect }) => {
 
   const ShareholderCard = ({ shareholder }) => {
     const isCompany = shareholder.holder_type === 'Company';
+    const isGov = shareholder.holder_type === 'Government';
+    const isOther = shareholder.holder_type === 'Other';
+    const isIndividual = shareholder.holder_type === 'Individual';
+
+    let displayType = 'Shareholder';
+    if (isCompany) displayType = 'Corporate Shareholder';
+    else if (isIndividual) displayType = 'Individual Shareholder';
+    else if (isGov) displayType = 'Government Entity';
+    else if (isOther) displayType = 'Other Shareholder';
+
+    let displayName = 'Unknown';
+    if (isCompany) displayName = shareholder.company_name;
+    else if (isIndividual) displayName = shareholder.individual_name;
+    else if (isGov) displayName = shareholder.government_entity_name;
+    else if (isOther) displayName = shareholder.other_name;
+
     return (
       <div className="block p-4 rounded-xl bg-slate-800/50 border border-slate-700 hover:border-slate-500 transition-all group relative text-center">
         {isCompany && shareholder.company && (
           <Link to={`/prospects/${shareholder.company}`} className="absolute inset-0 z-0"></Link>
         )}
         <div className="flex justify-center mb-3 relative z-10">
-          <span className={`text-[12px] font-bold px-3 py-1 rounded-full ${isCompany ? 'bg-indigo-600' : 'bg-emerald-600'} text-white tracking-wider flex items-center gap-1`}>
-            {isCompany ? <Building2 size={12} /> : <User size={12} />}
+          <span className={`text-[12px] font-bold px-3 py-1 rounded-full ${isCompany ? 'bg-indigo-600' : isGov ? 'bg-amber-600' : isOther ? 'bg-purple-600' : 'bg-emerald-600'} text-white tracking-wider flex items-center gap-1`}>
             {shareholder.share_percentage}%
           </span>
         </div>
         <h4 className="text-sm font-bold text-slate-200 group-hover:text-white mb-1 truncate relative z-10 pointer-events-none">
-          {isCompany ? shareholder.company_name : shareholder.individual_name}
+          {displayName}
         </h4>
         <div className="text-xs text-slate-500 truncate relative z-10 pointer-events-none">
-          {isCompany ? 'Corporate Shareholder' : 'Individual Shareholder'}
+          {displayType}
         </div>
       </div>
     );
   };
 
+  const containerClasses = isFullScreen
+    ? "fixed inset-0 z-50 bg-[#1a1f2e] overflow-auto p-8 font-sans"
+    : "bg-[#1a1f2e] rounded-xl overflow-hidden p-8 font-sans relative";
+
   return (
-    <div className="bg-[#1a1f2e] rounded-xl overflow-hidden p-8 font-sans">
-      <div className="flex justify-center mb-8 relative z-10">
-        <div className="inline-flex bg-slate-800/80 rounded-xl p-1.5 border border-slate-700 shadow-sm backdrop-blur-sm">
-          <button
-            onClick={() => setActiveTab('Company')}
-            className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'Company' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'}`}
-          >
-            <Building2 size={16} /> Company Shareholders ({companyHolders.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('Individual')}
-            className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'Individual' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'}`}
-          >
-            <User size={16} /> Individual Shareholders ({individualHolders.length})
-          </button>
+    <div className={containerClasses}>
+      <div className="absolute top-4 right-4 z-20">
+        <button
+          onClick={toggleFullScreen}
+          className="p-2 bg-slate-800 text-slate-400 hover:text-white rounded-lg border border-slate-700 hover:border-slate-500 transition-colors"
+          title={isFullScreen ? "Exit Full Screen" : "Full Screen View"}
+        >
+          {isFullScreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+        </button>
+      </div>
+
+      <div className="flex justify-center mb-8 relative z-10 pt-4">
+        <div className="inline-flex bg-slate-800/80 rounded-xl px-6 py-2.5 border border-slate-700 shadow-sm backdrop-blur-sm text-sm font-bold text-white tracking-wider uppercase">
+          All Shareholders ({allHolders.length})
         </div>
       </div>
 
       <div className="flex flex-col items-center">
         {/* Top Level: Shareholders */}
         <div className="flex flex-row justify-center flex-wrap gap-6 relative z-10 w-full pb-2">
-          {activeTab === 'Company' ? (
-            companyHolders.length > 0 ? (
-              companyHolders.map(sh => (
-                <div key={sh.id} className="w-64 shrink-0">
-                  <ShareholderCard shareholder={sh} />
-                </div>
-              ))
-            ) : (
-              <div className="text-xs text-slate-500 italic border border-slate-700/50 rounded-xl px-6 py-3 border-dashed">
-                No Corporate Shareholders found.
+          {allHolders.length > 0 ? (
+            allHolders.map(sh => (
+              <div key={sh.id} className="w-64 shrink-0">
+                <ShareholderCard shareholder={sh} />
               </div>
-            )
+            ))
           ) : (
-            individualHolders.length > 0 ? (
-              individualHolders.map(sh => (
-                <div key={sh.id} className="w-64 shrink-0">
-                  <ShareholderCard shareholder={sh} />
-                </div>
-              ))
-            ) : (
-              <div className="text-xs text-slate-500 italic border border-slate-700/50 rounded-xl px-6 py-3 border-dashed">
-                No Individual Shareholders found.
-              </div>
-            )
+            <div className="text-xs text-slate-500 italic border border-slate-700/50 rounded-xl px-6 py-3 border-dashed">
+              No Shareholders found.
+            </div>
           )}
         </div>
 
         {/* Vertical Line down to Current Focus */}
-        {((activeTab === 'Company' && companyHolders.length > 0) || (activeTab === 'Individual' && individualHolders.length > 0)) && (
+        {allHolders.length > 0 && (
           <div className="h-12 w-px bg-slate-600/50 my-2 relative border-l border-dashed border-slate-500"></div>
         )}
 

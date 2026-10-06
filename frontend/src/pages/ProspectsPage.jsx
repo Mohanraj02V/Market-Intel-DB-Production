@@ -21,8 +21,20 @@ const ProspectsPage = () => {
     const userId = user?.id || 'default';
     return sessionStorage.getItem(`prospectsMarketEvent_${userId}`) || '';
   });
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingProspect, setEditingProspect] = useState(null);
+  const [isFormOpen, setIsFormOpen] = useState(() => {
+    const userId = user?.id || 'default';
+    return sessionStorage.getItem(`prospectsFormOpen_${userId}`) === 'true';
+  });
+  const [editingProspect, setEditingProspect] = useState(() => {
+    const userId = user?.id || 'default';
+    const saved = sessionStorage.getItem(`prospectsEditing_${userId}`);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch(e) {}
+    }
+    return null;
+  });
   const [page, setPage] = useState(() => {
     const userId = user?.id || 'default';
     return parseInt(sessionStorage.getItem(`prospectsPage_${userId}`)) || 1;
@@ -33,7 +45,13 @@ const ProspectsPage = () => {
     sessionStorage.setItem(`prospectsSearch_${userId}`, searchTerm);
     sessionStorage.setItem(`prospectsMarketEvent_${userId}`, marketEventFilter);
     sessionStorage.setItem(`prospectsPage_${userId}`, page);
-  }, [searchTerm, marketEventFilter, page, user]);
+    sessionStorage.setItem(`prospectsFormOpen_${userId}`, isFormOpen);
+    if (editingProspect) {
+      sessionStorage.setItem(`prospectsEditing_${userId}`, JSON.stringify(editingProspect));
+    } else {
+      sessionStorage.removeItem(`prospectsEditing_${userId}`);
+    }
+  }, [searchTerm, marketEventFilter, page, user, isFormOpen, editingProspect]);
 
   useEffect(() => {
     dispatch(fetchMarketEvents({}));

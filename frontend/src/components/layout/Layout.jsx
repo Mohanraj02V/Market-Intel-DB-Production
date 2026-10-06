@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import SearchableSelect from '../common/SearchableSelect';
-import { LogOut, Users, Calendar, Activity, ClipboardList, UserCircle, Mail, LayoutDashboard, Shield, BarChart2, Eye, Settings, X, MessageCircle } from 'lucide-react';
+import { LogOut, Users, Calendar, Activity, ClipboardList, UserCircle, Mail, LayoutDashboard, Shield, BarChart2, Eye, Settings, X, MessageCircle, Building2 } from 'lucide-react';
 import { logout, loginSuccess } from '../../features/auth/authSlice';
 import api from '../../services/api';
 import { store } from '../../app/store';
@@ -84,6 +84,7 @@ const Layout = () => {
     navItems.push(
       { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { path: '/prospects', label: 'Prospects', icon: Users },
+      { path: '/government-entities', label: 'Government Entities', icon: Building2 },
       { path: '/key-people', label: 'Key People', icon: UserCircle },
       { path: '/market-events', label: 'Market Events', icon: Calendar },
       { path: '/pre-tasks', label: 'Tasks', icon: ClipboardList }

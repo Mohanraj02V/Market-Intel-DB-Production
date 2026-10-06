@@ -11,13 +11,54 @@ const PreTasksPage = () => {
   const { user } = useSelector((state) => state.auth);
   const isManager = user?.role === 'MANAGER';
   
-  const [editingProspect, setEditingProspect] = useState(null);
-  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingProspect, setEditingProspect] = useState(() => {
+    const userId = user?.id || 'default';
+    const saved = sessionStorage.getItem(`preTasksEditing_${userId}`);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch(e) {}
+    }
+    return null;
+  });
+  
+  const [isFormOpen, setIsFormOpen] = useState(() => {
+    const userId = user?.id || 'default';
+    return sessionStorage.getItem(`preTasksFormOpen_${userId}`) === 'true';
+  });
+  
   const [hasEdited, setHasEdited] = useState(false);
   const [highlightFields, setHighlightFields] = useState([]);
-  const [activeTaskId, setActiveTaskId] = useState(null);
+  
+  const [activeTaskId, setActiveTaskId] = useState(() => {
+    const userId = user?.id || 'default';
+    const saved = sessionStorage.getItem(`preTasksActiveTask_${userId}`);
+    return saved ? parseInt(saved, 10) : null;
+  });
 
-  const [activeTab, setActiveTab] = useState('PENDING');
+  const [activeTab, setActiveTab] = useState(() => {
+    const userId = user?.id || 'default';
+    return sessionStorage.getItem(`preTasksActiveTab_${userId}`) || 'PENDING';
+  });
+  
+  useEffect(() => {
+    const userId = user?.id || 'default';
+    sessionStorage.setItem(`preTasksFormOpen_${userId}`, isFormOpen);
+    sessionStorage.setItem(`preTasksActiveTab_${userId}`, activeTab);
+    
+    if (editingProspect) {
+      sessionStorage.setItem(`preTasksEditing_${userId}`, JSON.stringify(editingProspect));
+    } else {
+      sessionStorage.removeItem(`preTasksEditing_${userId}`);
+    }
+    
+    if (activeTaskId) {
+      sessionStorage.setItem(`preTasksActiveTask_${userId}`, activeTaskId.toString());
+    } else {
+      sessionStorage.removeItem(`preTasksActiveTask_${userId}`);
+    }
+  }, [isFormOpen, editingProspect, activeTaskId, activeTab, user]);
+
   const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [managerUserFilter, setManagerUserFilter] = useState('ALL');

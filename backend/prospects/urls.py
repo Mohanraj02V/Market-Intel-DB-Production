@@ -1,10 +1,11 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import ProspectViewSet, LQPipelineViewSet, CallbackReminderViewSet, MeetingViewSet, ProspectContactViewSet, CommunicationActivityViewSet, CallActivityViewSet, OutreachEmailViewSet, EmailTrackingView, pre_dashboard_stats, AuditReverificationRequestViewSet
+from .views import ProspectViewSet, LQPipelineViewSet, CallbackReminderViewSet, MeetingViewSet, ProspectContactViewSet, CommunicationActivityViewSet, CallActivityViewSet, OutreachEmailViewSet, EmailTrackingView, pre_dashboard_stats, AuditReverificationRequestViewSet, GovernmentEntityViewSet
 from .verification_views import EmailVerificationViewSet
 from .manager_views import manager_dashboard
 
 router = DefaultRouter()
+router.register(r'government-entities', GovernmentEntityViewSet, basename='government-entities')
 router.register(r'audit-reverifications', AuditReverificationRequestViewSet, basename='audit-reverifications')
 router.register(r'prospects', ProspectViewSet, basename='prospect')
 router.register(r'lq-pipeline', LQPipelineViewSet, basename='lq-pipeline')

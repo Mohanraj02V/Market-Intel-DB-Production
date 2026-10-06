@@ -11,7 +11,7 @@ const api = axios.create({
 
 api.interceptors.request.use(
   (config) => {
-    const token = store.getState().auth.accessToken;
+    const token = localStorage.getItem('accessToken') || store.getState().auth.accessToken;
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`;
     }
@@ -53,7 +53,7 @@ api.interceptors.response.use(
 
       originalRequest._retry = true;
       isRefreshing = true;
-      const refreshToken = store.getState().auth.refreshToken;
+      const refreshToken = localStorage.getItem('refreshToken') || store.getState().auth.refreshToken;
       
       if (refreshToken) {
         try {

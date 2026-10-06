@@ -1,40 +1,57 @@
-import React, { useState, useEffect } from 'react';
-import { useDispatch } from 'react-redux';
+import React, { useState, useEffect, useRef } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import { createUser, updateUser } from '../../features/users/userSlice';
 import { X } from 'lucide-react';
 import SearchableSelect from '../common/SearchableSelect';
 
 const UserForm = ({ isOpen, onClose, userToEdit }) => {
   const dispatch = useDispatch();
-  const [formData, setFormData] = useState({
+  const { user } = useSelector(state => state.auth);
+  const wasEditingRef = useRef(false);
+  const initialEmptyState = {
     email: '',
     first_name: '',
     last_name: '',
     role: 'PRE',
     timezone: 'UTC',
     password: ''
+  };
+
+  const [formData, setFormData] = useState(() => {
+    const userId = user?.id || 'default';
+    const saved = sessionStorage.getItem(`userFormData_${userId}`);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch(e) {}
+    }
+    return initialEmptyState;
   });
+
+  useEffect(() => {
+    const userId = user?.id || 'default';
+    sessionStorage.setItem(`userFormData_${userId}`, JSON.stringify(formData));
+  }, [formData, user]);
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
-    if (userToEdit) {
-      setFormData({
-        email: userToEdit.email || '',
-        first_name: userToEdit.first_name || '',
-        last_name: userToEdit.last_name || '',
-        role: userToEdit.role || 'PRE',
-        timezone: userToEdit.timezone || 'UTC',
-        password: '' // empty password on edit
-      });
-    } else {
-      setFormData({
-        email: '',
-        first_name: '',
-        last_name: '',
-        role: 'PRE',
-        timezone: 'UTC',
-        password: ''
-      });
+    if (isOpen) {
+      if (userToEdit) {
+        wasEditingRef.current = true;
+        setFormData({
+          email: userToEdit.email || '',
+          first_name: userToEdit.first_name || '',
+          last_name: userToEdit.last_name || '',
+          role: userToEdit.role || 'PRE',
+          timezone: userToEdit.timezone || 'UTC',
+          password: '' // empty password on edit
+        });
+      } else {
+        if (wasEditingRef.current) {
+          setFormData(initialEmptyState);
+          wasEditingRef.current = false;
+        }
+      }
     }
   }, [userToEdit, isOpen]);
 
@@ -53,6 +70,7 @@ const UserForm = ({ isOpen, onClose, userToEdit }) => {
         await dispatch(updateUser({ id: userToEdit.id, data })).unwrap();
       } else {
         await dispatch(createUser(formData)).unwrap();
+        setFormData(initialEmptyState);
       }
       onClose();
     } catch (err) {

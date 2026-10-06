@@ -8,8 +8,30 @@ const UserManagementPage = () => {
   const dispatch = useDispatch();
   const { items, loading, error } = useSelector((state) => state.users);
   const { user: currentUser } = useSelector((state) => state.auth);
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState(null);
+  const [isFormOpen, setIsFormOpen] = useState(() => {
+    const userId = currentUser?.id || 'default';
+    return sessionStorage.getItem(`userFormOpen_${userId}`) === 'true';
+  });
+  const [editingUser, setEditingUser] = useState(() => {
+    const userId = currentUser?.id || 'default';
+    const saved = sessionStorage.getItem(`userEditing_${userId}`);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch(e) {}
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    const userId = currentUser?.id || 'default';
+    sessionStorage.setItem(`userFormOpen_${userId}`, isFormOpen);
+    if (editingUser) {
+      sessionStorage.setItem(`userEditing_${userId}`, JSON.stringify(editingUser));
+    } else {
+      sessionStorage.removeItem(`userEditing_${userId}`);
+    }
+  }, [isFormOpen, editingUser, currentUser]);
 
   // Managers have full CRUD (but are restricted from modifying superusers in backend)
   const isManager = currentUser?.role === 'MANAGER' && !currentUser?.is_superuser;

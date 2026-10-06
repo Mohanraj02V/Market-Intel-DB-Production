@@ -10,6 +10,7 @@ import MarketEventsPage from '../pages/MarketEventsPage';
 import MarketEventDetailPage from '../pages/MarketEventDetailPage';
 import InboxPage from '../pages/InboxPage';
 import ProspectDetailPage from '../pages/ProspectDetailPage';
+import GovernmentEntitiesPage from '../pages/GovernmentEntitiesPage';
 import ImportPreviewPage from '../pages/ImportPreviewPage';
 import LqPipelinePage from '../pages/LqPipelinePage';
 import LqPipelineDetailPage from '../pages/LqPipelineDetailPage';
@@ -100,6 +101,8 @@ const AppRouter = () => {
           <Route path="prospects" element={<RoleRoute allowedRoles={['PRE', 'MANAGER']}><ProspectsPage /></RoleRoute>} />
           <Route path="prospects/import-preview" element={<RoleRoute allowedRoles={['PRE']}><ImportPreviewPage /></RoleRoute>} />
           <Route path="prospects/:id" element={<RoleRoute allowedRoles={['PRE', 'MANAGER']}><ProspectDetailPage /></RoleRoute>} />
+
+          <Route path="government-entities" element={<RoleRoute allowedRoles={['PRE']}><GovernmentEntitiesPage /></RoleRoute>} />
 
           {/* Market Events — PRE full, LQ + MANAGER read-only */}
           <Route path="market-events" element={<RoleRoute allowedRoles={['PRE', 'LQ', 'MANAGER']}><MarketEventsPage /></RoleRoute>} />

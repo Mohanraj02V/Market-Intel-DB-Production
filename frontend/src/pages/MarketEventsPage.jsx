@@ -17,8 +17,30 @@ const MarketEventsPage = () => {
   // LQ users have read-only access enforced on both frontend and backend.
   const canMutate = user?.role === 'PRE' || user?.is_superuser;
 
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingEvent, setEditingEvent] = useState(null);
+  const [isFormOpen, setIsFormOpen] = useState(() => {
+    const userId = user?.id || 'default';
+    return sessionStorage.getItem(`marketEventFormOpen_${userId}`) === 'true';
+  });
+  const [editingEvent, setEditingEvent] = useState(() => {
+    const userId = user?.id || 'default';
+    const saved = sessionStorage.getItem(`marketEventEditing_${userId}`);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch(e) {}
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    const userId = user?.id || 'default';
+    sessionStorage.setItem(`marketEventFormOpen_${userId}`, isFormOpen);
+    if (editingEvent) {
+      sessionStorage.setItem(`marketEventEditing_${userId}`, JSON.stringify(editingEvent));
+    } else {
+      sessionStorage.removeItem(`marketEventEditing_${userId}`);
+    }
+  }, [isFormOpen, editingEvent, user]);
 
   useEffect(() => {
     dispatch(fetchMarketEvents({ search, page }));

@@ -5,7 +5,7 @@ import { fetchProspectById, clearSelectedProspect } from '../features/prospects/
 import CorporateStructureTree from '../components/prospects/CorporateStructureTree';
 import ShareholderStructureTree from '../components/prospects/ShareholderStructureTree';
 import api from '../services/api';
-import { ArrowLeft, Building2, Globe, Mail, Phone, MapPin, Network, Package, Users, Calendar, Link as LinkIcon } from 'lucide-react';
+import { ArrowLeft, Building2, Globe, Mail, Phone, MapPin, Network, Package, Users, Calendar, Link as LinkIcon, X } from 'lucide-react';
 
 const ProspectDetailPage = () => {
   const { id } = useParams();
@@ -13,6 +13,7 @@ const ProspectDetailPage = () => {
   const { selectedProspect, loading, error } = useSelector((state) => state.prospects);
   const { user } = useSelector((state) => state.auth);
   const [verifyingEmail, setVerifyingEmail] = useState(null);
+  const [showContactsModal, setShowContactsModal] = useState(false);
 
   const handleVerifyEmail = async (email, contactId = null) => {
     try {
@@ -165,18 +166,28 @@ const ProspectDetailPage = () => {
             </div>
             <div className="p-6 space-y-4">
               {p.key_contacts && p.key_contacts.length > 0 ? (
-                p.key_contacts.map((contact, i) => (
-                  <div key={i} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                    <div className="font-medium text-sm text-slate-900">{contact.contact_name}</div>
-                    <div className="text-xs text-slate-500 mb-2">{contact.designation || 'No designation'}</div>
-                    {contact.official_email && (
-                      <div className="text-xs text-slate-600 flex items-center mt-1">
-                        <a href={`mailto:${contact.official_email}`} className="hover:text-indigo-600 truncate">{contact.official_email}</a>
-                      </div>
-                    )}
-                    {contact.phone_number && <div className="text-xs text-slate-600 mt-1">{contact.phone_number}</div>}
-                  </div>
-                ))
+                <>
+                  {p.key_contacts.slice(0, 3).map((contact, i) => (
+                    <div key={i} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="font-medium text-sm text-slate-900">{contact.prefix ? `${contact.prefix} ` : ''}{contact.contact_name}</div>
+                      <div className="text-xs text-slate-500 mb-2">{contact.designation || 'No designation'}</div>
+                      {contact.official_email && (
+                        <div className="text-xs text-slate-600 flex items-center mt-1">
+                          <a href={`mailto:${contact.official_email}`} className="hover:text-indigo-600 truncate">{contact.official_email}</a>
+                        </div>
+                      )}
+                      {contact.phone_number && <div className="text-xs text-slate-600 mt-1">{contact.phone_number}</div>}
+                    </div>
+                  ))}
+                  {p.key_contacts.length > 3 && (
+                    <button 
+                      onClick={() => setShowContactsModal(true)}
+                      className="w-full py-2 text-sm font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition-colors mt-2"
+                    >
+                      View All {p.key_contacts.length} Contacts
+                    </button>
+                  )}
+                </>
               ) : (
                 <div className="text-sm text-slate-500 italic">No contacts added.</div>
               )}
@@ -342,11 +353,11 @@ const ProspectDetailPage = () => {
         </div>
       </div>
       
-      {/* Branch Visualization Structure */}
+      {/* Corporate Structure Visualization */}
       <div className="mt-8">
         <h2 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
           <Network className="h-6 w-6 text-indigo-600" />
-          Branch Visualization Structure
+          Corporate Structure Visualization
         </h2>
         <CorporateStructureTree prospect={p} />
       </div>
@@ -359,6 +370,49 @@ const ProspectDetailPage = () => {
         </h2>
         <ShareholderStructureTree prospect={p} />
       </div>
+
+      {/* All Contacts Modal */}
+      {showContactsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]">
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Users size={20} className="text-indigo-500" />
+                All Key Contacts
+              </h3>
+              <button 
+                onClick={() => setShowContactsModal(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto space-y-4">
+              {p.key_contacts.map((contact, i) => (
+                <div key={i} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="font-bold text-slate-900">{contact.prefix ? `${contact.prefix} ` : ''}{contact.contact_name}</div>
+                  <div className="text-sm text-slate-500 mb-3">{contact.designation || 'No designation'}</div>
+                  
+                  <div className="space-y-2">
+                    {contact.official_email && (
+                      <div className="text-sm text-slate-600 flex items-center gap-2">
+                        <Mail size={14} className="text-slate-400" />
+                        <a href={`mailto:${contact.official_email}`} className="hover:text-indigo-600 truncate">{contact.official_email}</a>
+                      </div>
+                    )}
+                    {contact.phone_number && (
+                      <div className="text-sm text-slate-600 flex items-center gap-2">
+                        <Phone size={14} className="text-slate-400" />
+                        {contact.phone_number}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

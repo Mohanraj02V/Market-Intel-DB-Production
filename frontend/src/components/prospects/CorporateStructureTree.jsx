@@ -1,10 +1,13 @@
-import React from 'react';
-import { Building2, Network, Globe, MapPin, Link as LinkIcon, AlertCircle, Briefcase, Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Building2, Network, Globe, MapPin, Link as LinkIcon, AlertCircle, Briefcase, Trash2, Maximize2, Minimize2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const CorporateStructureTree = ({ prospect }) => {
+  const [isFullScreen, setIsFullScreen] = useState(false);
 
   if (!prospect) return null;
+
+  const toggleFullScreen = () => setIsFullScreen(!isFullScreen);
 
   const parents = prospect.parent_companies_detail || [];
   const children = prospect.child_companies_detail || [];
@@ -70,8 +73,21 @@ const CorporateStructureTree = ({ prospect }) => {
     </div>
   );
 
+  const containerClasses = isFullScreen
+    ? "fixed inset-0 z-50 bg-[#1a1f2e] overflow-auto p-8 font-sans"
+    : "bg-[#1a1f2e] rounded-xl overflow-hidden p-8 font-sans relative";
+
   return (
-    <div className="bg-[#1a1f2e] rounded-xl overflow-hidden p-8 font-sans">
+    <div className={containerClasses}>
+      <div className="absolute top-4 right-4 z-20">
+        <button
+          onClick={toggleFullScreen}
+          className="p-2 bg-slate-800 text-slate-400 hover:text-white rounded-lg border border-slate-700 hover:border-slate-500 transition-colors"
+          title={isFullScreen ? "Exit Full Screen" : "Full Screen View"}
+        >
+          {isFullScreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+        </button>
+      </div>
 
       {/* Top Level: Parents */}
       <div className="flex flex-col items-center">
@@ -100,6 +116,31 @@ const CorporateStructureTree = ({ prospect }) => {
         <div className="relative z-10 w-full max-w-md">
           <CompanyCard company={prospect} type={prospect.company_structure} glow={true} />
         </div>
+
+        {/* Acquisition Visualization (Acquired By) */}
+        {prospect.operational_status === 'Acquired' && prospect.acquiring_company_detail && (
+          <div className="flex flex-col items-center mt-6 w-full relative z-10">
+            <div className="h-6 border-l-2 border-dashed border-indigo-500/50"></div>
+            <div className="flex items-center gap-2 px-3 py-1 bg-indigo-500/20 border border-indigo-500/50 rounded-full text-[10px] font-bold text-indigo-400 uppercase tracking-widest my-2">
+              <LinkIcon size={12} /> ACQUIRED BY
+            </div>
+            <div className="h-6 border-l-2 border-dashed border-indigo-500/50 mb-2"></div>
+            
+            <div className="w-full max-w-sm">
+              <div className="relative p-4 rounded-xl bg-indigo-900/10 border border-indigo-500/30 hover:bg-indigo-900/20 transition-all text-center">
+                <div className="absolute -top-3 right-4 bg-indigo-500 text-white text-[9px] font-bold px-2 py-0.5 rounded uppercase">
+                  Acquiring Company
+                </div>
+                <Link to={`/prospects/${prospect.acquiring_company_detail.id}`} className="inline-block hover:opacity-80 transition-opacity">
+                  <h4 className="text-base font-bold text-slate-200 mb-1">{prospect.acquiring_company_detail.company_name}</h4>
+                </Link>
+                <div className="text-[10px] text-slate-400 flex items-center justify-center gap-1">
+                  <MapPin size={10} /> {prospect.acquiring_company_detail.country_head_office} &bull; {prospect.acquiring_company_detail.primary_industries}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Merger Visualization */}
         {['Acquired', 'Merged'].includes(prospect.operational_status) && prospect.status_target_detail && (
@@ -214,6 +255,34 @@ const CorporateStructureTree = ({ prospect }) => {
           </div>
         )}
 
+        {/* NEW Acquired Companies Visualization */}
+        {prospect.acquired_companies_detail && prospect.acquired_companies_detail.length > 0 && (
+          <div className="flex flex-col items-center mt-6 w-full relative z-10">
+            <div className="h-6 border-l-2 border-dashed border-indigo-500/50"></div>
+            <div className="flex items-center gap-2 px-3 py-1 bg-indigo-500/20 border border-indigo-500/50 rounded-full text-[10px] font-bold text-indigo-400 uppercase tracking-widest my-2">
+              <LinkIcon size={12} /> ACQUIRED COMPANIES ({prospect.acquired_companies_detail.length})
+            </div>
+            <div className="h-6 border-l-2 border-dashed border-indigo-500/50 mb-2"></div>
+            
+            <div className="flex flex-wrap justify-center gap-4 w-full max-w-2xl">
+              {prospect.acquired_companies_detail.map(ac => (
+                <div key={ac.id} className="relative p-4 rounded-xl bg-indigo-900/10 border border-indigo-500/30 hover:bg-indigo-900/20 transition-all text-center w-full sm:w-64">
+                  <div className="absolute -top-3 right-4 bg-indigo-500 text-white text-[9px] font-bold px-2 py-0.5 rounded uppercase shadow-sm">
+                    Acquired Company
+                  </div>
+                  <Link to={`/prospects/${ac.id}`} className="inline-block hover:opacity-80 transition-opacity">
+                    <h4 className="text-base font-bold text-slate-200 mb-1">{ac.company_name}</h4>
+                  </Link>
+                  <div className="text-[10px] text-slate-400 flex items-center justify-center gap-1">
+                    <MapPin size={10} /> {ac.country_head_office} &bull; {ac.primary_industries}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+
         {/* Vertical Line down to Children */}
         {children.length > 0 && (
           <div className="h-12 w-px bg-indigo-900/50 my-2"></div>
@@ -232,7 +301,7 @@ const CorporateStructureTree = ({ prospect }) => {
               </div>
             </div>
             {branches.length > 0 ? (
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                 {branches.map(b => (
                   <MiniCard key={b.id} company={b} badgeLabel="Branch" badgeColor="bg-cyan-600" />
                 ))}
@@ -252,7 +321,7 @@ const CorporateStructureTree = ({ prospect }) => {
               </div>
             </div>
             {subsidiaries.length > 0 ? (
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                 {subsidiaries.map(s => (
                   <MiniCard key={s.id} company={s} badgeLabel="Subsidiary" badgeColor="bg-purple-600" />
                 ))}

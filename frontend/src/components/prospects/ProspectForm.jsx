@@ -6,7 +6,9 @@ import { X, Plus, Trash2, Building, Network, Calendar } from 'lucide-react';
 import api from '../../services/api';
 import { toast } from 'react-toastify';
 import SearchableSelect from '../common/SearchableSelect';
-
+import { COUNTRIES } from '../../utils/countries';
+import PhoneInput from 'react-phone-number-input';
+import 'react-phone-number-input/style.css';
 const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], onSuccess = null, readOnly = false, highlightMode = 'error' }) => {
   const hColor = highlightMode === 'success' ? 'emerald' : 'red';
   const hClass = `border-2 border-${hColor}-500 bg-${hColor}-50/30 focus:border-${hColor}-500 focus:ring-${hColor}-500 text-${hColor}-900`;
@@ -19,37 +21,45 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
   const { user } = useSelector((state) => state.auth);
   const [parentOptions, setParentOptions] = useState([]);
   const [targetOptions, setTargetOptions] = useState([]);
+  const [govEntities, setGovEntities] = useState([]);
   const { items: marketEventsList } = useSelector((state) => state.marketEvents);
 
   const shareholdingRef = useRef(null);
   const keyContactsRef = useRef(null);
+  const wasEditingRef = useRef(false);
 
-  // Form State
-  const [formData, setFormData] = useState({
-    company_name: '',
-    country_head_office: '',
-    complete_address: '',
-    official_phone_number: '',
-    official_email_address: '',
-    official_website_url: '',
-    linkedin_company_page: '',
-    primary_industries: '',
-    company_structure: 'Parent',
-    ownership_sector: 'Private Company',
-    operational_status: 'Active',
-    parent_companies: [''],
-    status_target: '',
-    merger_role: '',
-    primary_offering_type: 'Multiple',
-    products: [{ name: '' }],
-    services: [{ name: '' }],
-    solutions: [{ name: '' }],
-    key_contacts: [{ contact_name: '', designation: '', official_email: '', phone_number: '', linkedin_profile: '' }],
+  const initialEmptyState = {
+    company_name: '', country_head_office: '', complete_address: '',
+    official_phone_number: '', official_email_address: '', official_website_url: '',
+    linkedin_company_page: '', primary_industries: '',
+    company_structure: 'Parent', ownership_sector: 'Private Company', operational_status: 'Active',
+    parent_companies: [''], status_target: '', merger_role: '', primary_offering_type: 'Multiple',
+    products: [{ name: '' }], services: [{ name: '' }], solutions: [{ name: '' }], 
+    key_contacts: [{ prefix: '', contact_name: '', designation: '', official_email: '', phone_number: '', linkedin_profile: '' }],
     market_event_ids: [],
     shareholdings: [],
     merging_companies: [],
-    dissolved_companies: []
+    dissolved_companies: [],
+    acquiring_company: null,
+    acquired_shares: ''
+  };
+
+  // Form State
+  const [formData, setFormData] = useState(() => {
+    const userId = user?.id || 'default';
+    const saved = sessionStorage.getItem(`prospectsFormData_${userId}`);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch(e) {}
+    }
+    return initialEmptyState;
   });
+
+  useEffect(() => {
+    const userId = user?.id || 'default';
+    sessionStorage.setItem(`prospectsFormData_${userId}`, JSON.stringify(formData));
+  }, [formData, user]);
 
   useEffect(() => {
     if (isOpen) {
@@ -59,9 +69,14 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
         setParentOptions(options.filter(p => p.id !== prospect?.id));
         setTargetOptions(options.filter(p => p.id !== prospect?.id));
       });
+      // Fetch government entities
+      api.get('/government-entities/?limit=1000').then(res => {
+        setGovEntities(res.data.results || res.data);
+      });
     }
 
     if (prospect && isOpen) {
+      wasEditingRef.current = true;
       dispatch(fetchMarketEvents({}));
       setFormData({
         ...prospect,
@@ -71,27 +86,24 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
         products: (prospect.products && prospect.products.length > 0) ? prospect.products : [{ name: '' }],
         services: (prospect.services && prospect.services.length > 0) ? prospect.services : [{ name: '' }],
         solutions: (prospect.solutions && prospect.solutions.length > 0) ? prospect.solutions : [{ name: '' }],
-        key_contacts: (prospect.key_contacts && prospect.key_contacts.length > 0) ? prospect.key_contacts : [{ contact_name: '', designation: '', official_email: '', phone_number: '', linkedin_profile: '' }],
+        key_contacts: (prospect.key_contacts && prospect.key_contacts.length > 0) ? prospect.key_contacts : [{ prefix: '', contact_name: '', designation: '', official_email: '', phone_number: '', linkedin_profile: '' }],
         market_event_ids: (prospect.market_events || []).map(e => e.id),
-        shareholdings: prospect.shareholdings || [],
+        shareholdings: (prospect.shareholdings || []).map(sh => ({
+          ...sh,
+          is_self: sh.company === prospect.id
+        })),
         merging_companies: prospect.merging_companies || [],
-        dissolved_companies: prospect.dissolved_companies || []
+        dissolved_companies: prospect.dissolved_companies || [],
+        acquiring_company: prospect.acquiring_company || null,
+        acquired_shares: prospect.acquired_shares || ''
       });
     } else if (isOpen) {
-      // Reset form on open if no prospect
+      // Preserve form data (draft) when opening "Add New Prospect" unless we just came from editing
       dispatch(fetchMarketEvents({}));
-      setFormData({
-        company_name: '', country_head_office: '', complete_address: '',
-        official_phone_number: '', official_email_address: '', official_website_url: '',
-        linkedin_company_page: '', primary_industries: '',
-        company_structure: 'Parent', ownership_sector: 'Private Company', operational_status: 'Active',
-        parent_companies: [''], status_target: '', merger_role: '', primary_offering_type: 'Multiple',
-        products: [{ name: '' }], services: [{ name: '' }], solutions: [{ name: '' }], 
-        key_contacts: [{ contact_name: '', designation: '', official_email: '', phone_number: '', linkedin_profile: '' }], market_event_ids: [],
-        shareholdings: [],
-        merging_companies: [],
-        dissolved_companies: []
-      });
+      if (wasEditingRef.current) {
+        setFormData(initialEmptyState);
+        wasEditingRef.current = false;
+      }
       setError(null);
     }
   }, [prospect, isOpen]);
@@ -191,7 +203,7 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
   const handleAddContact = () => {
     setFormData(prev => ({
       ...prev,
-      key_contacts: [...prev.key_contacts, { contact_name: '', designation: '', official_email: '', phone_number: '', linkedin_profile: '' }]
+      key_contacts: [...prev.key_contacts, { prefix: '', contact_name: '', designation: '', official_email: '', phone_number: '', linkedin_profile: '' }]
     }));
   };
 
@@ -388,6 +400,13 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
         cleanData.dissolved_companies = [];
       }
 
+      if (cleanData.operational_status !== 'Acquired') {
+        cleanData.acquiring_company = null;
+        cleanData.acquired_shares = null;
+      } else {
+        if (cleanData.acquired_shares === '') cleanData.acquired_shares = null;
+      }
+
       // Clean offerings
       const offerings = [];
       if (['Products', 'Multiple'].includes(cleanData.primary_offering_type)) {
@@ -418,6 +437,15 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
         if (newSh.company === "") newSh.company = null;
         if (newSh.contact === "") newSh.contact = null;
 
+        if (newSh.holder_type === 'Company') {
+          if (newSh.company === 'self' || newSh.is_self) {
+            newSh.is_self = true;
+            newSh.company = null;
+          } else {
+            newSh.is_self = false;
+          }
+        }
+
         if (newSh.holder_type === 'Individual' && newSh.contact_index !== null && newSh.contact_index !== undefined) {
           return { ...newSh, contact_index: oldIndexToNewIndex[newSh.contact_index] !== undefined ? oldIndexToNewIndex[newSh.contact_index] : null };
         }
@@ -427,6 +455,7 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
         await dispatch(updateProspect({ id: prospect.id, data: cleanData })).unwrap();
       } else {
         await dispatch(createProspect(cleanData)).unwrap();
+        setFormData(initialEmptyState);
       }
       if (onSuccess) onSuccess();
       onClose();
@@ -588,6 +617,35 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
               </div>
             )}
 
+            {formData.operational_status === 'Acquired' && (
+              <div className="mt-6 pt-6 border-t border-slate-100">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5">ACQUIRING COMPANY *</label>
+                    <SearchableSelect 
+                      value={formData.acquiring_company}
+                      onChange={(val) => setFormData(prev => ({...prev, acquiring_company: val}))}
+                      placeholder="Select acquiring company..."
+                      options={parentOptions.map(opt => ({ value: opt.id, label: `${opt.company_name} (${opt.country_head_office})` }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5">ACQUIRED SHARES (%) *</label>
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      value={formData.acquired_shares} 
+                      onChange={(e) => setFormData(prev => ({...prev, acquired_shares: e.target.value}))} 
+                      className="w-full rounded-xl bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-sm px-4 py-2.5 text-slate-900 transition-all outline-none shadow-sm"
+                      placeholder="e.g. 100"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
             {['Branch', 'Subsidiary'].includes(formData.company_structure) && (
               <div className="mt-6 pt-6 border-t border-slate-100">
                 <div className="flex justify-between items-center mb-4">
@@ -634,7 +692,14 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-1">Country (Head Office) *</label>
-                  <input type="text" name="country_head_office" value={formData.country_head_office} onChange={handleChange} className={`w-full rounded-xl shadow-sm text-sm px-4 py-3 text-slate-900 bg-white outline-none transition-all ${highlightFields?.includes('country_head_office') ? hClass : 'border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100'}`} />
+                  <div className={`${highlightFields?.includes('country_head_office') ? hClass : ''}`}>
+                    <SearchableSelect
+                      options={COUNTRIES}
+                      value={formData.country_head_office}
+                      onChange={(value) => setFormData({ ...formData, country_head_office: value })}
+                      placeholder="Select country"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -646,7 +711,13 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1.5 mb-1">Official Phone Number</label>
-                  <input type="text" name="official_phone_number" value={formData.official_phone_number} onChange={handleChange} className={`w-full rounded-xl shadow-sm text-sm px-4 py-3 text-slate-900 bg-white outline-none transition-all ${highlightFields?.includes('official_phone_number') ? hClass : 'border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100'}`} />
+                  <PhoneInput
+                    defaultCountry="US"
+                    international
+                    value={formData.official_phone_number}
+                    onChange={(val) => setFormData(prev => ({ ...prev, official_phone_number: val || '' }))}
+                    className={`w-full rounded-xl shadow-sm text-sm px-4 py-3 text-slate-900 bg-white outline-none transition-all flex items-center ${highlightFields?.includes('official_phone_number') ? hClass : 'border border-slate-200 focus:border-indigo-500 focus:within:ring-2 focus-within:ring-indigo-100'}`}
+                  />
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1">
@@ -734,7 +805,9 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
                         onChange={(val) => handleShareholdingChange(index, 'holder_type', val)}
                         options={[
                           { value: 'Company', label: 'Company' },
-                          { value: 'Individual', label: 'Individual' }
+                          { value: 'Individual', label: 'Individual' },
+                          { value: 'Government', label: 'Country or State' },
+                          { value: 'Other', label: 'Others' }
                         ]}
                       />
                     </div>
@@ -743,10 +816,42 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
                         <>
                           <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">Company *</label>
                           <SearchableSelect 
-                            value={sh.company || ''}
-                            onChange={(val) => handleShareholdingChange(index, 'company', val)}
+                            value={sh.is_self ? 'self' : (sh.company || '')}
+                            onChange={(val) => {
+                              if (val === 'self') {
+                                handleShareholdingChange(index, 'is_self', true);
+                                handleShareholdingChange(index, 'company', 'self');
+                              } else {
+                                handleShareholdingChange(index, 'is_self', false);
+                                handleShareholdingChange(index, 'company', val);
+                              }
+                            }}
                             placeholder="Select Company..."
-                            options={parentOptions.map(opt => ({ value: opt.id, label: `${opt.company_name} (${opt.country_head_office})` }))}
+                            options={[
+                              ...(formData.company_name ? [{ value: 'self', label: `${formData.company_name} (Self / Treasury)` }] : []),
+                              ...parentOptions.map(opt => ({ value: opt.id, label: `${opt.company_name} (${opt.country_head_office})` }))
+                            ]}
+                          />
+                        </>
+                      ) : sh.holder_type === 'Government' ? (
+                        <>
+                          <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">Government Entity Name *</label>
+                          <SearchableSelect 
+                            value={sh.government_entity || ''}
+                            onChange={(val) => handleShareholdingChange(index, 'government_entity', val)}
+                            placeholder="Select Government Entity..."
+                            options={govEntities.map(opt => ({ value: opt.id, label: `${opt.name} (${opt.country})` }))}
+                          />
+                        </>
+                      ) : sh.holder_type === 'Other' ? (
+                        <>
+                          <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">Stakeholder Name *</label>
+                          <input 
+                            type="text" 
+                            className="w-full rounded-xl shadow-sm text-sm px-4 py-2 text-slate-900 bg-white outline-none border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                            value={sh.other_name || ''} 
+                            onChange={(e) => handleShareholdingChange(index, 'other_name', e.target.value)}
+                            placeholder="Enter Name..."
                           />
                         </>
                       ) : (
@@ -955,9 +1060,32 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
                     <Trash2 size={18} />
                   </button>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mr-8">
-                    <div>
+                    <div className="col-span-2 md:col-span-1">
                       <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">Contact Name</label>
-                      <input type="text" value={contact.contact_name} onChange={(e) => handleContactChange(index, 'contact_name', e.target.value)} className="w-full rounded-xl bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-sm px-4 py-3 text-slate-900 transition-all outline-none shadow-sm" />
+                      <div className="flex gap-2">
+                        <div className="w-40 flex-shrink-0">
+                          <SearchableSelect
+                            value={contact.prefix || ''}
+                            onChange={(val) => handleContactChange(index, 'prefix', val)}
+                            placeholder="Prefix"
+                            options={[
+                              { value: 'Mr.', label: 'Mr.' },
+                              { value: 'Ms.', label: 'Ms.' },
+                              { value: 'Mrs.', label: 'Mrs.' },
+                              { value: 'Dr.', label: 'Dr.' },
+                              { value: 'Prof.', label: 'Prof.' },
+                              { value: 'Sir', label: 'Sir' },
+                              { value: 'Madam', label: 'Madam' },
+                              { value: 'His Highness', label: 'His Highness' },
+                              { value: 'Her Highness', label: 'Her Highness' },
+                              { value: 'His Excellency', label: 'His Excellency' },
+                              { value: 'Her Excellency', label: 'Her Excellency' },
+                              { value: 'Honorable', label: 'Honorable' }
+                            ]}
+                          />
+                        </div>
+                        <input type="text" value={contact.contact_name} onChange={(e) => handleContactChange(index, 'contact_name', e.target.value)} placeholder="Full Name" className="w-full rounded-xl bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-sm px-4 py-3 text-slate-900 transition-all outline-none shadow-sm" />
+                      </div>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">Designation / Role</label>
@@ -995,7 +1123,13 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">Phone Number</label>
-                      <input type="text" value={contact.phone_number} onChange={(e) => handleContactChange(index, 'phone_number', e.target.value)} className={`w-full rounded-md shadow-sm sm:text-sm px-4 py-2.5 text-slate-900 bg-white outline-none transition-colors ${contact.latest_call_status === 'Invalid Number' ? hClass : 'border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500'}`} />
+                      <PhoneInput
+                        defaultCountry="US"
+                        international
+                        value={contact.phone_number}
+                        onChange={(val) => handleContactChange(index, 'phone_number', val || '')}
+                        className={`w-full rounded-md shadow-sm sm:text-sm px-4 py-2.5 text-slate-900 bg-white outline-none transition-colors flex items-center ${contact.latest_call_status === 'Invalid Number' ? hClass : 'border border-slate-200 focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500'}`}
+                      />
                     </div>
                     <div className="md:col-span-2">
                       <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">LinkedIn Profile</label>
