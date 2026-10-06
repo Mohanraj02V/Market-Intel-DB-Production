@@ -34,12 +34,20 @@ class MarketEventSerializer(serializers.ModelSerializer):
             if view and view.action == 'list':
                 return None
         
-        # In detail view, `participations__prospect` should be prefetched
         if hasattr(obj, 'prefetched_participations'):
             prospects = [p.prospect for p in obj.prefetched_participations]
         else:
             prospects = Prospect.objects.filter(market_event_participations__market_event=obj)
             
+            if request and request.user:
+                user = request.user
+                if not user.is_superuser and hasattr(user, 'profile'):
+                    role = user.profile.role
+                    if role == 'PRE':
+                        prospects = prospects.filter(created_by=user.username)
+                    elif role == 'LQ':
+                        prospects = prospects.filter(lead_qualification__assigned_lq=user)
+
         return ParticipatingCompanySerializer(prospects, many=True).data
 
 class MarketEventSimpleSerializer(serializers.ModelSerializer):
