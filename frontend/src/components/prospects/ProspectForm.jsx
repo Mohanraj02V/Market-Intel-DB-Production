@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchMarketEvents } from '../../features/marketEvents/marketEventSlice';
 import { createProspect, updateProspect } from '../../features/prospects/prospectSlice';
@@ -21,6 +21,9 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
   const [targetOptions, setTargetOptions] = useState([]);
   const { items: marketEventsList } = useSelector((state) => state.marketEvents);
 
+  const shareholdingRef = useRef(null);
+  const keyContactsRef = useRef(null);
+
   // Form State
   const [formData, setFormData] = useState({
     company_name: '',
@@ -42,7 +45,10 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
     services: [{ name: '' }],
     solutions: [{ name: '' }],
     key_contacts: [{ contact_name: '', designation: '', official_email: '', phone_number: '', linkedin_profile: '' }],
-    market_event_ids: []
+    market_event_ids: [],
+    shareholdings: [],
+    merging_companies: [],
+    dissolved_companies: []
   });
 
   useEffect(() => {
@@ -66,7 +72,10 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
         services: (prospect.services && prospect.services.length > 0) ? prospect.services : [{ name: '' }],
         solutions: (prospect.solutions && prospect.solutions.length > 0) ? prospect.solutions : [{ name: '' }],
         key_contacts: (prospect.key_contacts && prospect.key_contacts.length > 0) ? prospect.key_contacts : [{ contact_name: '', designation: '', official_email: '', phone_number: '', linkedin_profile: '' }],
-        market_event_ids: (prospect.market_events || []).map(e => e.id)
+        market_event_ids: (prospect.market_events || []).map(e => e.id),
+        shareholdings: prospect.shareholdings || [],
+        merging_companies: prospect.merging_companies || [],
+        dissolved_companies: prospect.dissolved_companies || []
       });
     } else if (isOpen) {
       // Reset form on open if no prospect
@@ -78,7 +87,10 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
         company_structure: 'Parent', ownership_sector: 'Private Company', operational_status: 'Active',
         parent_companies: [''], status_target: '', merger_role: '', primary_offering_type: 'Multiple',
         products: [{ name: '' }], services: [{ name: '' }], solutions: [{ name: '' }], 
-        key_contacts: [{ contact_name: '', designation: '', official_email: '', phone_number: '', linkedin_profile: '' }], market_event_ids: []
+        key_contacts: [{ contact_name: '', designation: '', official_email: '', phone_number: '', linkedin_profile: '' }], market_event_ids: [],
+        shareholdings: [],
+        merging_companies: [],
+        dissolved_companies: []
       });
       setError(null);
     }
@@ -195,8 +207,24 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
   };
 
   const handleRemoveContact = (index) => {
+    const contactBeingRemoved = formData.key_contacts[index];
     const newContacts = formData.key_contacts.filter((_, i) => i !== index);
-    setFormData(prev => ({ ...prev, key_contacts: newContacts }));
+    
+    // Clean up shareholdings that reference this contact
+    const newShareholdings = formData.shareholdings.map(sh => {
+      if (sh.holder_type === 'Individual') {
+        if (contactBeingRemoved.id && sh.contact === contactBeingRemoved.id) {
+          return { ...sh, contact: null };
+        } else if (sh.contact_index === index) {
+          return { ...sh, contact_index: null };
+        } else if (sh.contact_index !== null && sh.contact_index > index) {
+          return { ...sh, contact_index: sh.contact_index - 1 };
+        }
+      }
+      return sh;
+    });
+
+    setFormData(prev => ({ ...prev, key_contacts: newContacts, shareholdings: newShareholdings }));
     setContactVerificationStatuses(prev => {
       const newStatuses = { ...prev };
       delete newStatuses[index];
@@ -210,6 +238,39 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
       });
       return newStatuses;
     });
+  };
+
+  const handleAddShareholding = () => {
+    setFormData(prev => ({
+      ...prev,
+      shareholdings: [...prev.shareholdings, { holder_type: 'Company', company: '', contact: null, contact_index: null, share_percentage: '' }]
+    }));
+  };
+
+  const handleShareholdingChange = (index, field, value) => {
+    setFormData(prev => {
+      const newShareholdings = [...prev.shareholdings];
+      const current = { ...newShareholdings[index] };
+      current[field] = value;
+      if (field === 'holder_type') {
+        current.company = '';
+        current.contact = null;
+        current.contact_index = null;
+      }
+      newShareholdings[index] = current;
+      return { ...prev, shareholdings: newShareholdings };
+    });
+
+    if (field === 'holder_type' && value === 'Individual') {
+      setTimeout(() => {
+        keyContactsRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
+  };
+
+  const handleRemoveShareholding = (index) => {
+    const newShareholdings = formData.shareholdings.filter((_, i) => i !== index);
+    setFormData(prev => ({ ...prev, shareholdings: newShareholdings }));
   };
 
   const validate = () => {
@@ -252,6 +313,20 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
       const isUnchanged = prospect && prospect.official_email_address === formData.official_email_address;
       if (!isUnchanged && instantVerificationStatus !== 'VALID') {
         return 'Please verify the Official Email Address before proceeding. Only VALID emails are allowed.';
+      }
+    }
+
+    // Shareholding validation
+    for (let i = 0; i < formData.shareholdings.length; i++) {
+      const sh = formData.shareholdings[i];
+      if (!sh.share_percentage || isNaN(sh.share_percentage) || Number(sh.share_percentage) <= 0 || Number(sh.share_percentage) > 100) {
+        return `Shares (%) must be a valid number between 0 and 100 for Shareholder ${i + 1}`;
+      }
+      if (sh.holder_type === 'Company' && !sh.company) {
+        return `Please select a Company for Shareholder ${i + 1}`;
+      }
+      if (sh.holder_type === 'Individual' && !sh.contact && sh.contact_index === null) {
+        return `Please select a Key Contact for Shareholder ${i + 1}`;
       }
     }
 
@@ -308,6 +383,11 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
       }
       if (cleanData.status_target === '') cleanData.status_target = null;
 
+      if (cleanData.operational_status !== 'Merged') {
+        cleanData.merging_companies = [];
+        cleanData.dissolved_companies = [];
+      }
+
       // Clean offerings
       const offerings = [];
       if (['Products', 'Multiple'].includes(cleanData.primary_offering_type)) {
@@ -322,8 +402,27 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
       cleanData.offerings_data = offerings;
 
       // Clean contacts
-      cleanData.key_contacts = cleanData.key_contacts.filter(c => c.contact_name.trim() !== '');
+      const validContacts = [];
+      const oldIndexToNewIndex = {};
+      cleanData.key_contacts.forEach((c, index) => {
+        if (c.contact_name.trim() !== '') {
+          oldIndexToNewIndex[index] = validContacts.length;
+          validContacts.push(c);
+        }
+      });
+      cleanData.key_contacts = validContacts;
+      
+      // Update shareholdings contact_index if any key contacts were removed
+      cleanData.shareholdings = cleanData.shareholdings.map(sh => {
+        let newSh = { ...sh };
+        if (newSh.company === "") newSh.company = null;
+        if (newSh.contact === "") newSh.contact = null;
 
+        if (newSh.holder_type === 'Individual' && newSh.contact_index !== null && newSh.contact_index !== undefined) {
+          return { ...newSh, contact_index: oldIndexToNewIndex[newSh.contact_index] !== undefined ? oldIndexToNewIndex[newSh.contact_index] : null };
+        }
+        return newSh;
+      });
       if (prospect) {
         await dispatch(updateProspect({ id: prospect.id, data: cleanData })).unwrap();
       } else {
@@ -451,6 +550,44 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
               </div>
             </div>
 
+            {formData.operational_status === 'Merged' && (
+              <div className="mt-6 pt-6 border-t border-slate-100">
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5">MERGING COMPANIES *</label>
+                    <SearchableSelect 
+                      isMulti={true}
+                      value={formData.merging_companies}
+                      onChange={(val) => {
+                        const newMerging = val || [];
+                        setFormData(prev => ({
+                          ...prev, 
+                          merging_companies: newMerging,
+                          dissolved_companies: prev.dissolved_companies.filter(d => newMerging.includes(d))
+                        }));
+                      }}
+                      placeholder="Select all merging companies..."
+                      options={parentOptions.map(opt => ({ value: opt.id, label: `${opt.company_name} (${opt.country_head_office})` }))}
+                    />
+                  </div>
+                  
+                  {formData.merging_companies.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1.5">DISSOLVED COMPANIES (SET TO INACTIVE)</label>
+                      <p className="text-xs text-slate-500 mb-2">Select companies that will be dissolved (marked as Inactive) due to this merger.</p>
+                      <SearchableSelect 
+                        isMulti={true}
+                        value={formData.dissolved_companies}
+                        onChange={(val) => setFormData(prev => ({...prev, dissolved_companies: val || []}))}
+                        placeholder="Select dissolved companies..."
+                        options={parentOptions.filter(opt => formData.merging_companies.includes(opt.id)).map(opt => ({ value: opt.id, label: `${opt.company_name} (${opt.country_head_office})` }))}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {['Branch', 'Subsidiary'].includes(formData.company_structure) && (
               <div className="mt-6 pt-6 border-t border-slate-100">
                 <div className="flex justify-between items-center mb-4">
@@ -565,6 +702,108 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
                   <input type="text" name="primary_industries" value={formData.primary_industries} onChange={handleChange} className={`w-full rounded-xl shadow-sm text-sm px-4 py-3 text-slate-900 bg-white outline-none transition-all ${highlightFields?.includes('primary_industries') ? hClass : 'border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100'}`} />
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Section: Shareholding / Ownership */}
+          <div ref={shareholdingRef} className="bg-slate-50/70 rounded-xl border border-slate-200 shadow-sm p-6">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-lg font-medium text-slate-800">Shareholding / Ownership</h3>
+              </div>
+              {!readOnly && (
+                <button type="button" onClick={handleAddShareholding} className="px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-medium hover:bg-indigo-100 flex items-center gap-1">
+                  <Plus size={16} /> Add Shareholder
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              {formData.shareholdings.map((sh, index) => (
+                <div key={index} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 relative">
+                  {!readOnly && (
+                    <button type="button" onClick={() => handleRemoveShareholding(index)} className="absolute top-4 right-4 text-slate-400 hover:text-red-500">
+                      <Trash2 size={18} />
+                    </button>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mr-8">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">Holder Type *</label>
+                      <SearchableSelect 
+                        value={sh.holder_type} 
+                        onChange={(val) => handleShareholdingChange(index, 'holder_type', val)}
+                        options={[
+                          { value: 'Company', label: 'Company' },
+                          { value: 'Individual', label: 'Individual' }
+                        ]}
+                      />
+                    </div>
+                    <div>
+                      {sh.holder_type === 'Company' ? (
+                        <>
+                          <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">Company *</label>
+                          <SearchableSelect 
+                            value={sh.company || ''}
+                            onChange={(val) => handleShareholdingChange(index, 'company', val)}
+                            placeholder="Select Company..."
+                            options={parentOptions.map(opt => ({ value: opt.id, label: `${opt.company_name} (${opt.country_head_office})` }))}
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">Key Contact *</label>
+                          <SearchableSelect 
+                            value={sh.contact ? `id:${sh.contact}` : (sh.contact_index !== null && sh.contact_index !== undefined ? `idx:${sh.contact_index}` : '')}
+                            onChange={(val) => {
+                              if (!val) {
+                                handleShareholdingChange(index, 'contact', null);
+                                handleShareholdingChange(index, 'contact_index', null);
+                                return;
+                              }
+                              if (val.startsWith('id:')) {
+                                handleShareholdingChange(index, 'contact', val.substring(3));
+                                handleShareholdingChange(index, 'contact_index', null);
+                              } else if (val.startsWith('idx:')) {
+                                handleShareholdingChange(index, 'contact', null);
+                                handleShareholdingChange(index, 'contact_index', parseInt(val.substring(4), 10));
+                              }
+                            }}
+                            placeholder="Select Key Contact..."
+                            options={formData.key_contacts.map((c, i) => {
+                              const idVal = c.id ? `id:${c.id}` : `idx:${i}`;
+                              const display = c.contact_name ? `${c.contact_name}${c.designation ? ` — ${c.designation}` : ''}` : `Contact ${i + 1} (Name pending)`;
+                              return { value: idVal, label: display };
+                            })}
+                          />
+                          {sh.holder_type === 'Individual' && (sh.contact || sh.contact_index !== null) && (
+                            <div className="mt-2 text-sm text-slate-600 font-medium bg-white px-3 py-1.5 rounded-lg border border-slate-200">
+                              Individual Name: {sh.contact ? formData.key_contacts.find(c => c.id === sh.contact)?.contact_name : (sh.contact_index !== null ? formData.key_contacts[sh.contact_index]?.contact_name : '')}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wider">Shares (%) *</label>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        value={sh.share_percentage} 
+                        onChange={(e) => handleShareholdingChange(index, 'share_percentage', e.target.value)} 
+                        className="w-full rounded-xl bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-sm px-4 py-2.5 text-slate-900 transition-all outline-none shadow-sm"
+                        disabled={readOnly}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {formData.shareholdings.length === 0 && (
+                <div className="text-center py-6 text-slate-500 text-sm border border-dashed border-slate-200 rounded-xl">
+                  No shareholders added yet.
+                </div>
+              )}
             </div>
           </div>
 
@@ -693,15 +932,20 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
           </div>
 
           {/* Section 5: Key Contacts */}
-          <div className="bg-slate-50/70 rounded-xl border border-slate-200 shadow-sm p-6">
+          <div ref={keyContactsRef} className="bg-slate-50/70 rounded-xl border border-slate-200 shadow-sm p-6">
             <div className="flex justify-between items-start mb-6">
               <div>
                 <h3 className="text-lg font-medium text-slate-800">Key Contacts / Personnel</h3>
                 <p className="text-sm text-slate-500 mt-1">Assign decision makers for this prospect</p>
               </div>
-              <button type="button" onClick={handleAddContact} className="px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-medium hover:bg-indigo-100 flex items-center gap-1">
-                <Plus size={16} /> Add Key Contact
-              </button>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => shareholdingRef.current?.scrollIntoView({ behavior: 'smooth' })} className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 flex items-center gap-1 transition-colors">
+                  Return to Shareholding
+                </button>
+                <button type="button" onClick={handleAddContact} className="px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-medium hover:bg-indigo-100 flex items-center gap-1">
+                  <Plus size={16} /> Add Key Contact
+                </button>
+              </div>
             </div>
 
             <div className="space-y-4">

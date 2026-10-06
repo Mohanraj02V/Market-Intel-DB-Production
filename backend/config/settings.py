@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'prospects',
     'market_events',
     'whatsapp',
+    'drf_spectacular',
 ]
 
 # ── Middleware ─────────────────────────────────────────────────────────────────
@@ -139,6 +140,14 @@ REST_FRAMEWORK = {
     'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 50,
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Market Intel DB API',
+    'DESCRIPTION': 'API Documentation for Market Intel DB',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
 }
 
 SIMPLE_JWT = {

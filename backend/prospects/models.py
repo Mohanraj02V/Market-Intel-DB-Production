@@ -47,6 +47,8 @@ class Prospect(models.Model):
     operational_status = models.CharField(max_length=50, choices=Status.choices)
 
     parent_companies = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='child_companies')
+    merging_companies = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='merged_into_prospects')
+    dissolved_companies = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='dissolved_into_prospects')
 
     ownership_sector = models.CharField(max_length=50, choices=OwnershipSector.choices, default=OwnershipSector.PRIVATE)
     primary_offering_type = models.CharField(max_length=50, choices=OfferingType.choices)
@@ -360,3 +362,70 @@ class EmailVerification(models.Model):
 
     def __str__(self):
         return f"{self.email_address} - {self.verification_status}"
+
+class ProspectShareholding(models.Model):
+    class HolderType(models.TextChoices):
+        COMPANY = "Company", "Company"
+        INDIVIDUAL = "Individual", "Individual"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    prospect = models.ForeignKey(
+        Prospect,
+        on_delete=models.CASCADE,
+        related_name="shareholdings"
+    )
+
+    holder_type = models.CharField(
+        max_length=20,
+        choices=HolderType.choices
+    )
+
+    company = models.ForeignKey(
+        Prospect,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="owned_shareholdings"
+    )
+
+    contact = models.ForeignKey(
+        ProspectContact,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="shareholdings"
+    )
+
+    share_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def clean(self):
+        if self.holder_type == self.HolderType.COMPANY:
+            if not self.company:
+                raise ValidationError("Company is required when holder_type is Company.")
+            if self.contact:
+                raise ValidationError("Contact must be null when holder_type is Company.")
+            if self.prospect == self.company:
+                raise ValidationError("A prospect cannot be its own shareholder.")
+        elif self.holder_type == self.HolderType.INDIVIDUAL:
+            if not self.contact:
+                raise ValidationError("Contact is required when holder_type is Individual.")
+            if self.company:
+                raise ValidationError("Company must be null when holder_type is Individual.")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        if self.holder_type == self.HolderType.COMPANY and self.company:
+            return f"{self.company.company_name} - {self.share_percentage}%"
+        elif self.holder_type == self.HolderType.INDIVIDUAL and self.contact:
+            return f"{self.contact.contact_name} - {self.share_percentage}%"
+        return f"Shareholding {self.id} - {self.share_percentage}%"

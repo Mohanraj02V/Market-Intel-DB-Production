@@ -1,6 +1,6 @@
 from market_events.serializers import MarketEventSimpleSerializer
 from rest_framework import serializers
-from .models import Prospect, ProspectOffering, ProspectContact, AuditReverificationRequest
+from .models import Prospect, ProspectOffering, ProspectContact, AuditReverificationRequest, ProspectShareholding
 
 class ProspectOfferingSerializer(serializers.ModelSerializer):
     class Meta:
@@ -48,6 +48,16 @@ class ProspectContactSerializer(serializers.ModelSerializer):
         fields = ['id', 'prospect', 'prospect_name', 'contact_name', 'designation', 'official_email', 'phone_number', 'linkedin_profile', 'latest_call_status', 'latest_communication_outcome', 'email_verification_status', 'email_verification_id', 'created_at', 'updated_at']
         read_only_fields = ['id', 'prospect', 'prospect_name', 'latest_call_status', 'latest_communication_outcome', 'email_verification_status', 'email_verification_id', 'created_at', 'updated_at']
 
+class ProspectShareholdingSerializer(serializers.ModelSerializer):
+    company_name = serializers.CharField(source='company.company_name', read_only=True)
+    individual_name = serializers.CharField(source='contact.contact_name', read_only=True)
+    contact_index = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+
+    class Meta:
+        model = ProspectShareholding
+        fields = ['id', 'holder_type', 'company', 'company_name', 'contact', 'individual_name', 'share_percentage', 'contact_index']
+        read_only_fields = ['id', 'company_name', 'individual_name']
+
 class ProspectSimpleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Prospect
@@ -56,11 +66,16 @@ class ProspectSimpleSerializer(serializers.ModelSerializer):
 class ProspectSerializer(serializers.ModelSerializer):
     parent_companies_detail = ProspectSimpleSerializer(source='parent_companies', many=True, read_only=True)
     child_companies_detail = ProspectSimpleSerializer(source='child_companies', many=True, read_only=True)
+    merging_companies_detail = ProspectSimpleSerializer(source='merging_companies', many=True, read_only=True)
+    dissolved_companies_detail = ProspectSimpleSerializer(source='dissolved_companies', many=True, read_only=True)
+    merged_into_prospects_detail = ProspectSimpleSerializer(source='merged_into_prospects', many=True, read_only=True)
+    dissolved_into_prospects_detail = ProspectSimpleSerializer(source='dissolved_into_prospects', many=True, read_only=True)
 
     products = serializers.SerializerMethodField()
     services = serializers.SerializerMethodField()
     solutions = serializers.SerializerMethodField()
     key_contacts = ProspectContactSerializer(many=True, required=False)
+    shareholdings = ProspectShareholdingSerializer(many=True, required=False)
     company_email_verification_status = serializers.SerializerMethodField()
     qualification_status = serializers.SerializerMethodField()
 
@@ -100,8 +115,10 @@ class ProspectSerializer(serializers.ModelSerializer):
             'official_phone_number', 'official_email_address', 'official_website_url',
             'linkedin_company_page', 'primary_industries', 'company_structure',
             'operational_status', 'ownership_sector', 'parent_companies', 'parent_companies_detail', 'child_companies_detail',
+            'merging_companies', 'merging_companies_detail', 'dissolved_companies', 'dissolved_companies_detail',
+            'merged_into_prospects_detail', 'dissolved_into_prospects_detail',
             'primary_offering_type', 'products', 'services', 'solutions',
-            'offerings_data', 'key_contacts', 'created_at', 'updated_at',
+            'offerings_data', 'key_contacts', 'shareholdings', 'created_at', 'updated_at',
             'created_by', 'updated_by', 'market_events', 'market_event_ids', 'company_email_verification_status', 'qualification_status', 'pre_task_status', 'audit_reverify_fields'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by', 'market_events', 'market_event_ids', 'company_email_verification_status', 'qualification_status', 'pre_task_status', 'audit_reverify_fields']
@@ -153,7 +170,10 @@ class ProspectSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         offerings_data = validated_data.pop('offerings_data', [])
         contacts_data = validated_data.pop('key_contacts', [])
+        shareholdings_data = validated_data.pop('shareholdings', [])
         parent_companies = validated_data.pop('parent_companies', [])
+        merging_companies = validated_data.pop('merging_companies', [])
+        dissolved_companies = validated_data.pop('dissolved_companies', [])
         market_event_ids = validated_data.pop('market_event_ids', [])
 
         prospect = Prospect.objects.create(**validated_data)
@@ -174,11 +194,28 @@ class ProspectSerializer(serializers.ModelSerializer):
         if parent_companies:
             prospect.parent_companies.set(parent_companies)
 
+        if prospect.operational_status == Prospect.Status.MERGED:
+            if merging_companies:
+                prospect.merging_companies.set(merging_companies)
+            if dissolved_companies:
+                prospect.dissolved_companies.set(dissolved_companies)
+                for dissolved in dissolved_companies:
+                    dissolved.operational_status = Prospect.Status.INACTIVE
+                    dissolved.save(update_fields=['operational_status'])
+
         for offering in offerings_data:
             ProspectOffering.objects.create(prospect=prospect, **offering)
 
+        created_contacts = []
         for contact in contacts_data:
-            ProspectContact.objects.create(prospect=prospect, **contact)
+            created_contacts.append(ProspectContact.objects.create(prospect=prospect, **contact))
+            
+        for sh_data in shareholdings_data:
+            contact_index = sh_data.pop('contact_index', None)
+            if sh_data.get('holder_type') == 'Individual' and contact_index is not None:
+                if 0 <= contact_index < len(created_contacts):
+                    sh_data['contact'] = created_contacts[contact_index]
+            ProspectShareholding.objects.create(prospect=prospect, **sh_data)
 
         # Always assign an LQ user immediately after creation.
         # This runs at the serializer level — the deepest possible hook —
@@ -194,7 +231,10 @@ class ProspectSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         offerings_data = validated_data.pop('offerings_data', None)
         contacts_data = validated_data.pop('key_contacts', None)
+        shareholdings_data = validated_data.pop('shareholdings', None)
         parent_companies = validated_data.pop('parent_companies', None)
+        merging_companies = validated_data.pop('merging_companies', None)
+        dissolved_companies = validated_data.pop('dissolved_companies', None)
         market_event_ids = validated_data.pop('market_event_ids', None)
 
         for attr, value in validated_data.items():
@@ -225,6 +265,18 @@ class ProspectSerializer(serializers.ModelSerializer):
         if parent_companies is not None:
             instance.parent_companies.set(parent_companies)
 
+        if instance.operational_status == Prospect.Status.MERGED:
+            if merging_companies is not None:
+                instance.merging_companies.set(merging_companies)
+            if dissolved_companies is not None:
+                instance.dissolved_companies.set(dissolved_companies)
+                for dissolved in dissolved_companies:
+                    dissolved.operational_status = Prospect.Status.INACTIVE
+                    dissolved.save(update_fields=['operational_status'])
+        else:
+            instance.merging_companies.clear()
+            instance.dissolved_companies.clear()
+
         if offerings_data is not None:
             instance.offerings.all().delete()
             for offering in offerings_data:
@@ -253,6 +305,38 @@ class ProspectSerializer(serializers.ModelSerializer):
             for c_id, c_inst in existing_contacts.items():
                 if c_id not in seen_ids:
                     c_inst.delete()
+
+        if shareholdings_data is not None:
+            raw_shareholdings = self.initial_data.get('shareholdings', [])
+            existing_sh = {str(sh.id): sh for sh in instance.shareholdings.all()}
+            seen_sh_ids = []
+            
+            # Need to get all current contacts for new shareholdings linking by index
+            current_contacts = list(instance.key_contacts.all())
+
+            for i, sh_data in enumerate(shareholdings_data):
+                raw_id = None
+                if i < len(raw_shareholdings) and isinstance(raw_shareholdings[i], dict):
+                    raw_id = str(raw_shareholdings[i].get('id', ''))
+                
+                contact_index = sh_data.pop('contact_index', None)
+                if sh_data.get('holder_type') == 'Individual' and not sh_data.get('contact') and contact_index is not None:
+                    if 0 <= contact_index < len(current_contacts):
+                        sh_data['contact'] = current_contacts[contact_index]
+
+                if raw_id and raw_id in existing_sh:
+                    sh_inst = existing_sh[raw_id]
+                    for k, v in sh_data.items():
+                        setattr(sh_inst, k, v)
+                    sh_inst.save()
+                    seen_sh_ids.append(raw_id)
+                else:
+                    new_sh = ProspectShareholding.objects.create(prospect=instance, **sh_data)
+                    seen_sh_ids.append(str(new_sh.id))
+
+            for sh_id, sh_inst in existing_sh.items():
+                if sh_id not in seen_sh_ids:
+                    sh_inst.delete()
 
         return instance
 

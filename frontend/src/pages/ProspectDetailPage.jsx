@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchProspectById, clearSelectedProspect } from '../features/prospects/prospectSlice';
 import CorporateStructureTree from '../components/prospects/CorporateStructureTree';
+import ShareholderStructureTree from '../components/prospects/ShareholderStructureTree';
 import api from '../services/api';
 import { ArrowLeft, Building2, Globe, Mail, Phone, MapPin, Network, Package, Users, Calendar, Link as LinkIcon } from 'lucide-react';
 
@@ -228,6 +229,48 @@ const ProspectDetailPage = () => {
                   )}
                 </div>
               )}
+              
+              {p.operational_status === 'Merged' && p.merging_companies_detail && p.merging_companies_detail.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <dt className="text-xs font-medium text-slate-500 uppercase mb-2">Merged From (Companies)</dt>
+                  <dd className="space-y-2">
+                    {p.merging_companies_detail.map((mc, i) => {
+                      const isDissolved = p.dissolved_companies?.includes(mc.id);
+                      return (
+                        <div key={i} className="flex flex-col mb-2">
+                          <Link to={`/prospects/${mc.id}`} className="text-sm font-bold text-indigo-600 hover:underline flex items-center gap-1">
+                            <Building2 size={14} /> {mc.company_name}
+                          </Link>
+                          {isDissolved && (
+                            <span className="text-[10px] text-amber-600 font-semibold bg-amber-50 inline-block px-2 py-0.5 rounded-full w-max mt-1 border border-amber-100">Dissolved (Inactive)</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </dd>
+                </div>
+              )}
+
+              {p.merged_into_prospects_detail && p.merged_into_prospects_detail.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <dt className="text-xs font-medium text-slate-500 uppercase mb-2">Merged Into / Acquired By</dt>
+                  <dd className="space-y-2">
+                    {p.merged_into_prospects_detail.map((mc, i) => {
+                      const isDissolved = p.dissolved_into_prospects_detail?.some(d => d.id === mc.id);
+                      return (
+                        <div key={i} className="flex flex-col mb-2">
+                          <Link to={`/prospects/${mc.id}`} className="text-sm font-bold text-indigo-600 hover:underline flex items-center gap-1">
+                            <Building2 size={14} /> {mc.company_name}
+                          </Link>
+                          {isDissolved && (
+                            <span className="text-[10px] text-amber-600 font-semibold bg-amber-50 inline-block px-2 py-0.5 rounded-full w-max mt-1 border border-amber-100">Dissolved Into</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </dd>
+                </div>
+              )}
             </div>
           </div>
 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -306,6 +349,15 @@ const ProspectDetailPage = () => {
           Branch Visualization Structure
         </h2>
         <CorporateStructureTree prospect={p} />
+      </div>
+
+      {/* Shareholder Visualization Structure */}
+      <div className="mt-8">
+        <h2 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+          <Building2 className="h-6 w-6 text-indigo-600" />
+          Shareholders Visualization Structure
+        </h2>
+        <ShareholderStructureTree prospect={p} />
       </div>
     </div>
   );

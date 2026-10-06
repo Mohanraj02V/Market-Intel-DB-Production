@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, ChevronDown, Check } from 'lucide-react';
 
-const SearchableSelect = ({ options, value, onChange, placeholder = "Select an option..." }) => {
+const SearchableSelect = ({ options, value, onChange, placeholder = "Select an option...", isMulti = false }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const wrapperRef = useRef(null);
@@ -23,18 +23,21 @@ const SearchableSelect = ({ options, value, onChange, placeholder = "Select an o
     (option.label || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const selectedOption = validOptions.find(opt => opt.value === value);
+  const selectedOption = !isMulti ? validOptions.find(opt => opt.value === value) : null;
+  const multiLabels = isMulti && Array.isArray(value) 
+    ? value.map(v => validOptions.find(o => o.value === v)?.label).filter(Boolean).join(', ')
+    : '';
 
   return (
     <div ref={wrapperRef} className="relative w-full text-left">
       <div 
-        className={`w-full rounded-xl bg-white border ${isOpen ? 'border-indigo-500 ring-2 ring-indigo-100' : 'border-slate-200'} text-sm px-4 py-3 transition-all shadow-sm cursor-pointer flex justify-between items-center`}
+        className={`w-full rounded-xl bg-white border ${isOpen ? 'border-indigo-500 ring-2 ring-indigo-100' : 'border-slate-200'} text-sm px-4 py-3 transition-all shadow-sm cursor-pointer flex justify-between items-center min-h-[46px]`}
         onClick={() => { setIsOpen(!isOpen); setSearchTerm(''); }}
       >
-        <span className={`block truncate ${selectedOption ? 'text-slate-900 font-bold' : 'text-slate-500'}`}>
-          {selectedOption ? selectedOption.label : placeholder}
+        <span className={`block truncate pr-2 ${(!isMulti && selectedOption) || (isMulti && multiLabels) ? 'text-slate-900 font-bold' : 'text-slate-500'}`}>
+          {isMulti ? (multiLabels || placeholder) : (selectedOption ? selectedOption.label : placeholder)}
         </span>
-        <ChevronDown size={18} className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180 text-indigo-500' : ''}`} />
+        <ChevronDown size={18} className={`text-slate-400 shrink-0 transition-transform ${isOpen ? 'rotate-180 text-indigo-500' : ''}`} />
       </div>
 
       {isOpen && (
@@ -56,19 +59,30 @@ const SearchableSelect = ({ options, value, onChange, placeholder = "Select an o
             {filteredOptions.length === 0 ? (
               <div className="p-3 text-sm text-center text-slate-500">No results found</div>
             ) : (
-              filteredOptions.map((option) => (
-                <div
-                  key={option.value}
-                  className={`px-3 py-2.5 text-sm rounded-lg cursor-pointer flex items-center justify-between transition-colors ${value === option.value ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-700 hover:bg-slate-50 font-medium'}`}
-                  onClick={() => {
-                    onChange(option.value);
-                    setIsOpen(false);
-                  }}
-                >
-                  <span className="truncate pr-4">{option.label}</span>
-                  {value === option.value && <Check size={16} className="text-indigo-600 shrink-0" />}
-                </div>
-              ))
+              filteredOptions.map((option) => {
+                const isSelected = isMulti ? Array.isArray(value) && value.includes(option.value) : value === option.value;
+                return (
+                  <div
+                    key={option.value}
+                    className={`px-3 py-2.5 text-sm rounded-lg cursor-pointer flex items-center justify-between transition-colors ${isSelected ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-700 hover:bg-slate-50 font-medium'}`}
+                    onClick={(e) => {
+                      if (isMulti) {
+                        e.stopPropagation();
+                        const newValue = isSelected 
+                          ? value.filter(v => v !== option.value) 
+                          : [...(Array.isArray(value) ? value : []), option.value];
+                        onChange(newValue);
+                      } else {
+                        onChange(option.value);
+                        setIsOpen(false);
+                      }
+                    }}
+                  >
+                    <span className="truncate pr-4">{option.label}</span>
+                    {isSelected && <Check size={16} className="text-indigo-600 shrink-0" />}
+                  </div>
+                );
+              })
             )}
           </div>
         </div>

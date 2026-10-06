@@ -46,19 +46,26 @@ const CorporateStructureTree = ({ prospect }) => {
   );
 
   const MiniCard = ({ company, badgeLabel, badgeColor }) => (
-    <div className="block p-4 rounded-xl bg-slate-800/50 border border-slate-700 hover:border-slate-500 transition-all group relative">
+    <div className={`block p-4 rounded-xl bg-slate-800/50 border border-slate-700 hover:border-slate-500 transition-all group relative ${company.operational_status === 'Inactive' ? 'opacity-70' : ''}`}>
       <Link to={`/prospects/${company.id}`} className="absolute inset-0 z-0"></Link>
       <div className="flex items-center justify-between mb-2 relative z-10">
-        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${badgeColor} text-white uppercase tracking-wider`}>
-          {badgeLabel}
-        </span>
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${badgeColor} text-white uppercase tracking-wider`}>
+            {badgeLabel}
+          </span>
+          {company.operational_status && company.operational_status !== 'Active' && (
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-500 border border-amber-700/50 uppercase tracking-wider">
+              {company.operational_status}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 text-slate-400 text-xs">
+          <div className="flex items-center gap-1 text-slate-400 text-xs shrink-0">
             <MapPin size={10} /> {company.country_head_office}
           </div>
         </div>
       </div>
-      <h4 className="text-sm font-bold text-slate-200 group-hover:text-white mb-1 truncate relative z-10 pointer-events-none">{company.company_name}</h4>
+      <h4 className={`text-sm font-bold text-slate-200 group-hover:text-white mb-1 truncate relative z-10 pointer-events-none ${company.operational_status === 'Inactive' ? 'line-through decoration-slate-500' : ''}`}>{company.company_name}</h4>
       <div className="text-xs text-slate-500 truncate relative z-10 pointer-events-none">{company.primary_industries}</div>
     </div>
   );
@@ -143,6 +150,66 @@ const CorporateStructureTree = ({ prospect }) => {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* NEW Merged Into Visualization (Where this prospect went) */}
+        {prospect.merged_into_prospects_detail && prospect.merged_into_prospects_detail.length > 0 && (
+          <div className="flex flex-col items-center mt-6 w-full relative z-10">
+            <div className="h-6 border-l-2 border-dashed border-amber-500/50"></div>
+            <div className="flex items-center gap-2 px-3 py-1 bg-amber-500/20 border border-amber-500/50 rounded-full text-[10px] font-bold text-amber-400 uppercase tracking-widest my-2">
+              <LinkIcon size={12} /> MERGED INTO ({prospect.merged_into_prospects_detail.length})
+            </div>
+            <div className="h-6 border-l-2 border-dashed border-amber-500/50 mb-2"></div>
+            
+            <div className="flex flex-wrap justify-center gap-4 w-full max-w-2xl">
+              {prospect.merged_into_prospects_detail.map(mc => {
+                const isDissolved = prospect.dissolved_into_prospects_detail?.some(d => d.id === mc.id);
+                return (
+                  <div key={mc.id} className="relative p-4 rounded-xl bg-amber-900/10 border border-amber-500/30 hover:bg-amber-900/20 transition-all text-center w-full sm:w-64">
+                    <div className="absolute -top-3 right-4 bg-amber-500 text-white text-[9px] font-bold px-2 py-0.5 rounded uppercase shadow-sm">
+                      {isDissolved ? 'Dissolved Into' : 'Merged Into'}
+                    </div>
+                    <Link to={`/prospects/${mc.id}`} className="inline-block hover:opacity-80 transition-opacity">
+                      <h4 className="text-base font-bold text-slate-200 mb-1">{mc.company_name}</h4>
+                    </Link>
+                    <div className="text-[10px] text-slate-400 flex items-center justify-center gap-1">
+                      <MapPin size={10} /> {mc.country_head_office} &bull; {mc.primary_industries}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* NEW Merging Companies Visualization (Merged From) */}
+        {prospect.operational_status === 'Merged' && prospect.merging_companies_detail && prospect.merging_companies_detail.length > 0 && (
+          <div className="flex flex-col items-center mt-6 w-full relative z-10">
+            <div className="h-6 border-l-2 border-dashed border-amber-500/50"></div>
+            <div className="flex items-center gap-2 px-3 py-1 bg-amber-500/20 border border-amber-500/50 rounded-full text-[10px] font-bold text-amber-400 uppercase tracking-widest my-2">
+              <LinkIcon size={12} /> MERGED FROM ({prospect.merging_companies_detail.length})
+            </div>
+            <div className="h-6 border-l-2 border-dashed border-amber-500/50 mb-2"></div>
+            
+            <div className="flex flex-wrap justify-center gap-4 w-full max-w-2xl">
+              {prospect.merging_companies_detail.map(mc => {
+                const isDissolved = prospect.dissolved_companies?.includes(mc.id);
+                return (
+                  <div key={mc.id} className="relative p-4 rounded-xl bg-amber-900/10 border border-amber-500/30 hover:bg-amber-900/20 transition-all text-center w-full sm:w-64">
+                    <div className="absolute -top-3 right-4 bg-amber-500 text-white text-[9px] font-bold px-2 py-0.5 rounded uppercase shadow-sm">
+                      {isDissolved ? 'Dissolved' : 'Merging Partner'}
+                    </div>
+                    <Link to={`/prospects/${mc.id}`} className="inline-block hover:opacity-80 transition-opacity">
+                      <h4 className="text-base font-bold text-slate-200 mb-1">{mc.company_name}</h4>
+                    </Link>
+                    <div className="text-[10px] text-slate-400 flex items-center justify-center gap-1">
+                      <MapPin size={10} /> {mc.country_head_office} &bull; {mc.primary_industries}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
