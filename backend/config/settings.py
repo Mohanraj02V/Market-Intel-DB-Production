@@ -154,9 +154,9 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     # Rotate refresh tokens on each use — old tokens become invalid.
-    'ROTATE_REFRESH_TOKENS': True,
+    'ROTATE_REFRESH_TOKENS': False,
     # Blacklist old refresh tokens after rotation to prevent reuse.
-    'BLACKLIST_AFTER_ROTATION': True,
+    'BLACKLIST_AFTER_ROTATION': False,
     # Update the last login timestamp on token issue.
     'UPDATE_LAST_LOGIN': True,
 }

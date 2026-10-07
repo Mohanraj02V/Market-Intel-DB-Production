@@ -1,8 +1,8 @@
 import { createSlice } from '@reduxjs/toolkit';
+import { cookieStorage } from '../../utils/cookieStorage';
 
-// Use localStorage so tokens are shared across multiple tabs.
-// The session timeout is now enforced purely by the backend token expiration.
-const _storage = localStorage;
+// Use session cookies so tokens are shared across all tabs and cleared when the browser closes.
+const _storage = cookieStorage;
 
 const initialState = {
   user: null,

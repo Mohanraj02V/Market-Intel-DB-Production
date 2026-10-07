@@ -38,6 +38,32 @@ const rootReducer = (state, action) => {
   return appReducer(state, action);
 };
 
+const loadState = () => {
+  try {
+    const serializedState = sessionStorage.getItem('reduxState');
+    if (serializedState === null) {
+      return undefined;
+    }
+    return JSON.parse(serializedState);
+  } catch (err) {
+    return undefined;
+  }
+};
+
+const saveState = (state) => {
+  try {
+    const serializedState = JSON.stringify(state);
+    sessionStorage.setItem('reduxState', serializedState);
+  } catch (err) {
+    // Ignore write errors
+  }
+};
+
 export const store = configureStore({
   reducer: rootReducer,
+  preloadedState: loadState(),
+});
+
+store.subscribe(() => {
+  saveState(store.getState());
 });

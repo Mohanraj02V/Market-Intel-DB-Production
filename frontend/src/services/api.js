@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { store } from '../app/store';
 import { tokenRefreshed, logout } from '../features/auth/authSlice';
+import { cookieStorage } from '../utils/cookieStorage';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
@@ -11,7 +12,7 @@ const api = axios.create({
 
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('accessToken') || store.getState().auth.accessToken;
+    const token = cookieStorage.getItem('accessToken') || store.getState().auth.accessToken;
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`;
     }
@@ -53,7 +54,7 @@ api.interceptors.response.use(
 
       originalRequest._retry = true;
       isRefreshing = true;
-      const refreshToken = localStorage.getItem('refreshToken') || store.getState().auth.refreshToken;
+      const refreshToken = cookieStorage.getItem('refreshToken') || store.getState().auth.refreshToken;
       
       if (refreshToken) {
         try {

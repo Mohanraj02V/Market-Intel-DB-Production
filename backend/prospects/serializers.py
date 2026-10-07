@@ -400,10 +400,11 @@ class LeadQualificationSerializer(serializers.ModelSerializer):
             'qualification_status', 'qualification_score', 'lq_notes',
             'email_status', 'budget', 'authority', 'need', 'timeline',
             'verification_checklist', 'issue_category', 'issue_details',
+            'completed_tasks_log',
             'emails_sent_count', 'calls_logged_count', 'attended_meeting',
             'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'prospect', 'pre_task_status', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'prospect', 'pre_task_status', 'created_at', 'updated_at', 'completed_tasks_log']
 
 from .models import CallbackReminder
 

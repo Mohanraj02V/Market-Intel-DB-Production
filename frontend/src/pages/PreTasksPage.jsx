@@ -73,24 +73,48 @@ const PreTasksPage = () => {
   }, [dispatch, activeTab]);
 
   // Filter tasks locally based on tab and date
-  const tasks = items.filter(item => {
-    if (activeTab === 'PENDING') return item.pre_task_status === 'ISSUE_SENT_TO_PRE';
-    if (activeTab === 'COMPLETED') {
-      // Consider completed if it's not currently pending an issue
-      if (item.pre_task_status === 'ISSUE_SENT_TO_PRE') return false;
+  let tasks = [];
+  if (activeTab === 'PENDING') {
+    tasks = items.filter(item => item.pre_task_status === 'ISSUE_SENT_TO_PRE');
+  } else if (activeTab === 'COMPLETED') {
+    tasks = items.flatMap(item => {
+      // Use completed_tasks_log if available for an accurate history
+      const log = item.completed_tasks_log || [];
+      if (log.length > 0) {
+        return log.map(logEntry => {
+          const itemDate = logEntry.completed_at ? logEntry.completed_at.split('T')[0] : '';
+          let inRange = true;
+          if (startDate) inRange = inRange && itemDate >= startDate;
+          if (endDate) inRange = inRange && itemDate <= endDate;
+          
+          if (!inRange) return null;
+
+          return {
+            id: logEntry.id,
+            isHistoricalLog: true,
+            issue_category: logEntry.issue_category,
+            issue_details: logEntry.issue_details,
+            completed_at: logEntry.completed_at,
+            prospect: {
+              ...item.prospect,
+              created_by: item.prospect?.created_by || logEntry.issue_reported_by // fallback
+            }
+          };
+        }).filter(Boolean);
+      }
       
-      // If there's no updated_at, we can still fall back to created_at
+      // Fallback for legacy completed tasks that didn't generate a log
+      if (item.pre_task_status === 'ISSUE_SENT_TO_PRE') return [];
       const dateToUse = item.updated_at || item.created_at;
-      if (!dateToUse) return false;
+      if (!dateToUse) return [];
       const itemDate = new Date(dateToUse).toISOString().split('T')[0];
       
       let inRange = true;
       if (startDate) inRange = inRange && itemDate >= startDate;
       if (endDate) inRange = inRange && itemDate <= endDate;
-      return inRange;
-    }
-    return false;
-  });
+      return inRange ? [item] : [];
+    });
+  }
 
   const availableUsers = Array.from(new Set(tasks.map(t => t.prospect?.created_by))).filter(Boolean);
   

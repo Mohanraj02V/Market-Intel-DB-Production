@@ -127,6 +127,7 @@ class LeadQualification(models.Model):
     attended_meeting = models.BooleanField(default=False)
     qualification_score = models.IntegerField(default=0)
     lq_notes = models.TextField(blank=True, null=True)
+    completed_tasks_log = models.JSONField(default=list, blank=True)
 
     assigned_lq = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_prospects')
 

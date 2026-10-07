@@ -641,9 +641,30 @@ class LQPipelineViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='complete-pre-task')
     def complete_pre_task(self, request, pk=None):
+        import uuid
+        from django.utils import timezone
+        
         lq = self.get_object()
+        
+        # Log the completed task
+        task_log = {
+            'id': str(uuid.uuid4()),
+            'issue_category': lq.issue_category,
+            'issue_details': lq.issue_details,
+            'issue_reported_by': lq.issue_reported_by.username if lq.issue_reported_by else None,
+            'issue_reported_at': lq.issue_reported_at.isoformat() if lq.issue_reported_at else None,
+            'completed_at': timezone.now().isoformat(),
+            'prospect_company_name': lq.prospect.company_name,
+            'prospect_country': lq.prospect.country_head_office,
+            'prospect_industries': lq.prospect.primary_industries,
+        }
+        
+        if not isinstance(lq.completed_tasks_log, list):
+            lq.completed_tasks_log = []
+        lq.completed_tasks_log.append(task_log)
+        
         lq.pre_task_status = LeadQualification.PreTaskStatus.PRE_UPDATED
-        lq.save(update_fields=['pre_task_status'])
+        lq.save(update_fields=['pre_task_status', 'completed_tasks_log'])
         return Response(self.get_serializer(lq).data)
 
     @action(detail=True, methods=['post'], url_path='confirm-reverification')
@@ -1253,6 +1274,70 @@ def pre_dashboard_stats(request):
     monthly_avg = (entered_this_month / monthly_target) * 100 if monthly_target else 0
     actual_progress = (entered_this_month / (daily_target * passed_working_days)) * 100 if passed_working_days else 0
     
+    tasks_received_today = 0
+    tasks_received_month = 0
+    total_tasks_received = 0
+    
+    tasks_completed_today = 0
+    tasks_completed_month = 0
+    completed_tasks = 0
+    
+    lqs_for_tasks = LeadQualification.objects.filter(prospect__created_by=user.username)
+    for lq in lqs_for_tasks:
+        # Check active task
+        if lq.pre_task_status == 'ISSUE_SENT_TO_PRE':
+            total_tasks_received += 1
+            if lq.issue_reported_at:
+                if lq.issue_reported_at >= today_start:
+                    tasks_received_today += 1
+                if lq.issue_reported_at >= month_start:
+                    tasks_received_month += 1
+                    
+        has_logs = isinstance(lq.completed_tasks_log, list) and len(lq.completed_tasks_log) > 0
+        
+        # Check fallback completed task (before log was added)
+        if lq.pre_task_status == 'PRE_UPDATED' and not has_logs:
+            total_tasks_received += 1
+            completed_tasks += 1
+            if lq.updated_at >= today_start:
+                tasks_received_today += 1
+                tasks_completed_today += 1
+            if lq.updated_at >= month_start:
+                tasks_received_month += 1
+                tasks_completed_month += 1
+                
+        # Check logged tasks
+        if isinstance(lq.completed_tasks_log, list):
+            for log_entry in lq.completed_tasks_log:
+                total_tasks_received += 1
+                completed_tasks += 1
+                
+                # Check completed time
+                completed_at_str = log_entry.get('completed_at')
+                if completed_at_str:
+                    try:
+                        completed_at = datetime.datetime.fromisoformat(completed_at_str)
+                        if completed_at >= today_start:
+                            tasks_completed_today += 1
+                        if completed_at >= month_start:
+                            tasks_completed_month += 1
+                    except Exception:
+                        pass
+                
+                # Check reported time
+                reported_at_str = log_entry.get('issue_reported_at')
+                if reported_at_str:
+                    try:
+                        reported_at = datetime.datetime.fromisoformat(reported_at_str)
+                        if reported_at >= today_start:
+                            tasks_received_today += 1
+                        if reported_at >= month_start:
+                            tasks_received_month += 1
+                    except Exception:
+                        pass
+
+    task_completion_average = (completed_tasks / total_tasks_received * 100) if total_tasks_received else 0
+    
     lq_percentage = (total_lq / total_entered) * 100 if total_entered else 0
     
     return Response({
@@ -1267,8 +1352,14 @@ def pre_dashboard_stats(request):
         'unqualified_prospects': total_unqualified,
         'daily_average': round(min(daily_avg, 100), 1),
         'monthly_average': round(min(monthly_avg, 100), 1),
-        'actual_progress': round(actual_progress, 1),
         'lead_qualified_percentage': round(lq_percentage, 1),
+        'tasks_received_today': tasks_received_today,
+        'tasks_completed_today': tasks_completed_today,
+        'tasks_received_month': tasks_received_month,
+        'tasks_completed_month': tasks_completed_month,
+        'total_tasks_received': total_tasks_received,
+        'completed_tasks': completed_tasks,
+        'task_completion_average': round(task_completion_average, 1)
     })
 
 class AuditReverificationRequestViewSet(viewsets.ModelViewSet):

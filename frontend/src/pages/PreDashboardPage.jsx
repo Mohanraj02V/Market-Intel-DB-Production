@@ -170,6 +170,42 @@ const PreDashboardPage = () => {
           />
         </div>
 
+        {/* Task Metrics Row */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <MetricCard 
+            title="Tasks Today" 
+            value={stats.tasks_completed_today} 
+            subtitle={`${stats.tasks_received_today} received today`}
+            icon={Activity} 
+            colorClass="text-indigo-500"
+            bgIconClass="bg-indigo-50"
+          />
+          <MetricCard 
+            title="Tasks This Month" 
+            value={stats.tasks_completed_month} 
+            subtitle={`${stats.tasks_received_month} received this month`}
+            icon={Calendar} 
+            colorClass="text-sky-600"
+            bgIconClass="bg-sky-50"
+          />
+          <MetricCard 
+            title="Total Tasks Received" 
+            value={stats.total_tasks_received} 
+            subtitle="All time tasks received"
+            icon={Target} 
+            colorClass="text-amber-500"
+            bgIconClass="bg-amber-50"
+          />
+          <MetricCard 
+            title="Total Tasks Completed" 
+            value={stats.completed_tasks} 
+            subtitle="All time tasks completed"
+            icon={CheckCircle} 
+            colorClass="text-emerald-500"
+            bgIconClass="bg-emerald-50"
+          />
+        </div>
+
         {/* Progress Section */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Progress Panel */}
@@ -202,10 +238,15 @@ const PreDashboardPage = () => {
               <div className="hidden md:block w-px h-32 bg-slate-200"></div>
 
               <div className="flex flex-col items-center">
-                <CircularProgress percentage={stats.actual_progress} colorClass="text-sky-500" label="Actual Prog" />
-                <p className="text-sm font-medium text-slate-500 mt-4 text-center max-w-[150px]">
-                  Pace against elapsed working days
-                </p>
+                <CircularProgress percentage={stats.task_completion_average} colorClass="text-emerald-500" label="Task Avg" />
+                <div className="flex flex-col items-center mt-3">
+                  <p className="text-sm font-bold text-slate-800">
+                    {stats.completed_tasks} / {stats.total_tasks_received} Tasks
+                  </p>
+                  <p className="text-xs font-medium text-slate-500 mt-1 text-center max-w-[150px]">
+                    Task completion rate
+                  </p>
+                </div>
               </div>
 
             </div>

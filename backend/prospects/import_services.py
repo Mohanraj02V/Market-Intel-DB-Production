@@ -561,39 +561,67 @@ def run_import(rows, request, serializer_class, file_name='', client_limit_reach
         not_imported_rows.append({'source_row_numbers': it.source_row_numbers,
                                   'company_name': it.company_name, 'reason': reason})
 
-    # Dependency order guarantees every in-file parent was attempted before its children.
+    # Group items into dependency levels so independent rows can be imported concurrently
+    item_level = {}
+    levels = []
     for i in order:
         it = items[i]
-        if it.errors:
-            fail(it, ' '.join(it.errors))
-            continue
-        reason = _failed_parent_reason(items, it, failed, 'was not imported')
-        if reason:
-            fail(it, reason)
-            continue
+        level = 0
+        for _, _, status, p_idx in it.parent_refs:
+            if status == STATUS_FOUND_IN_FILE:
+                level = max(level, item_level.get(p_idx, 0) + 1)
+        item_level[i] = level
+        while len(levels) <= level:
+            levels.append([])
+        levels[level].append(i)
+
+    def process_item(i):
+        from django.db import connection
         try:
-            emails = _email_check(it, client_emails.get(i))
+            it = items[i]
+            if it.errors:
+                return (i, False, ' '.join(it.errors), None)
+            
+            # Since levels are processed sequentially, file-parents are guaranteed 
+            # to be in the 'created' dictionary if they were successfully imported.
             parent_ids = []
             for _, key, status, p_idx in it.parent_refs:
-                pid = created[p_idx] if status == STATUS_FOUND_IN_FILE else parent_cache[key]
-                if pid not in parent_ids:
+                if status == STATUS_FOUND_IN_FILE:
+                    pid = created.get(p_idx)
+                    if not pid:
+                        return (i, False, f"Parent company '{items[p_idx].company_name}' was not imported.", None)
                     parent_ids.append(pid)
+                else:
+                    parent_ids.append(parent_cache[key])
+            
+            emails = _email_check(it, client_emails.get(i))
             prospect = import_single_row(it, parent_ids, emails, serializer_class, request)
+            return (i, True, None, prospect.id)
         except RowImportError as e:
-            fail(it, str(e))
-            continue
+            return (i, False, str(e), None)
         except IntegrityError:
-            logger.exception('Integrity error importing prospect row %s', it.source_row_numbers)
-            fail(it, 'Could not be saved because of a database conflict (possibly a duplicate company).')
-            continue
+            logger.exception('Integrity error importing prospect row %s', items[i].source_row_numbers)
+            return (i, False, 'Could not be saved because of a database conflict (possibly a duplicate company).', None)
         except Exception:
-            logger.exception('Unexpected error importing prospect row %s', it.source_row_numbers)
-            fail(it, 'An unexpected error occurred while importing this row.')
-            continue
-        created[i] = prospect.id
-        parent_cache[it.key] = prospect.id
-        imported_rows.append({'source_row_numbers': it.source_row_numbers,
-                              'company_name': it.company_name, 'prospect_id': str(prospect.id)})
+            logger.exception('Unexpected error importing prospect row %s', items[i].source_row_numbers)
+            return (i, False, 'An unexpected error occurred while importing this row.', None)
+        finally:
+            connection.close() # Vital to prevent connection pool exhaustion in threads
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    for lvl_items in levels:
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            results = list(executor.map(process_item, lvl_items))
+            for i, success, reason, pid in results:
+                it = items[i]
+                if success:
+                    created[i] = pid
+                    parent_cache[it.key] = pid
+                    imported_rows.append({'source_row_numbers': it.source_row_numbers,
+                                          'company_name': it.company_name, 'prospect_id': str(pid)})
+                else:
+                    fail(it, reason)
 
     referenced_file_parents = {p for it in items for _, _, status, p in it.parent_refs
                                if status == STATUS_FOUND_IN_FILE}
