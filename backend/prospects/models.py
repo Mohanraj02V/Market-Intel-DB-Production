@@ -49,8 +49,13 @@ class Prospect(models.Model):
     parent_companies = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='child_companies')
     merging_companies = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='merged_into_prospects')
     dissolved_companies = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='dissolved_into_prospects')
-    acquiring_company = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='acquired_companies')
-    acquired_shares = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    acquiring_companies = models.ManyToManyField(
+        'self', 
+        through='ProspectAcquisition', 
+        symmetrical=False, 
+        blank=True, 
+        related_name='acquired_companies_rev'
+    )
 
     ownership_sector = models.CharField(max_length=50, choices=OwnershipSector.choices, default=OwnershipSector.PRIVATE)
     primary_offering_type = models.CharField(max_length=50, choices=OfferingType.choices)
@@ -525,3 +530,17 @@ class ProspectImportHistory(models.Model):
 
     def __str__(self):
         return f"Import {self.file_name} ({self.status})"
+
+class ProspectAcquisition(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    acquired_prospect = models.ForeignKey(Prospect, related_name='acquisition_records', on_delete=models.CASCADE)
+    acquiring_prospect = models.ForeignKey(Prospect, related_name='acquired_records', on_delete=models.CASCADE)
+    acquired_shares = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('acquired_prospect', 'acquiring_prospect')
+
+    def __str__(self):
+        return f"{self.acquiring_prospect.company_name} acquired {self.acquired_prospect.company_name}"

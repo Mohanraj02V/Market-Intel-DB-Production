@@ -112,7 +112,6 @@ const ImportPreviewPage = () => {
         { key: 'parent_company_names', label: 'Parent Company / Parent Companies' },
         { key: 'operational_status', label: 'Operational Status', required: true },
         { key: 'status_target', label: 'Target / Surviving Company' },
-        { key: 'merger_role', label: 'Owner Sector' },
         { key: 'ownership_sector', label: 'Company Type', required: true },
         { key: 'primary_offering_type', label: 'Primary Offering Type', required: true },
       ]
@@ -123,6 +122,7 @@ const ImportPreviewPage = () => {
         { key: 'merging_companies', label: 'Merging Companies' },
         { key: 'dissolved_companies', label: 'Dissolved Companies' },
         { key: 'acquiring_company', label: 'Acquiring Company' },
+        { key: 'acquired_shares', label: 'Acquired Shares (%)' },
         { key: 'acquired_companies', label: 'Acquired Companies' },
         { key: 'shareholders', label: 'Stakeholders / Shareholders' },
       ]
@@ -142,6 +142,12 @@ const ImportPreviewPage = () => {
         { key: 'product', label: 'Products Offered' },
         { key: 'service', label: 'Services Provided' },
         { key: 'solution', label: 'Solutions Provided' },
+      ]
+    },
+    {
+      title: 'Market Events',
+      fields: [
+        { key: 'market_events', label: 'Associated Market Events' },
       ]
     }
   ];
@@ -341,8 +347,14 @@ const ImportPreviewPage = () => {
       if (ev.type === 'company') {
         newData[index].data.official_email_address = newEmail;
       } else if (ev.type === 'contact') {
-        const contact = newData[index].data.key_contacts.find(c => c.contact_name === ev.contact_name);
-        if (contact) contact.official_email = newEmail;
+        const cIndex = ev.contact_index;
+        if (cIndex !== undefined && newData[index].data.key_contacts[cIndex]) {
+          newData[index].data.key_contacts[cIndex].official_email = newEmail;
+        } else {
+          // Fallback if index missing for some reason
+          const contact = newData[index].data.key_contacts.find(c => c.contact_name === ev.contact_name);
+          if (contact) contact.official_email = newEmail;
+        }
       }
       return newData;
     });
@@ -366,9 +378,9 @@ const ImportPreviewPage = () => {
 
     setImporting(true);
     try {
-      // Send all current rows: the backend independently decides which rows are importable.
+      // Only send rows that are fully valid and verified.
       const res = await api.post('/prospects/import/commit/', {
-        rows: previewData,
+        rows: importable,
         file_name: file?.name || '',
         limit_reached: !!previewMeta?.limit_reached,
       });
@@ -431,7 +443,7 @@ const ImportPreviewPage = () => {
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', 'prospect_import_blueprint.xlsx');
+      link.setAttribute('download', 'prospect_blueprint.xlsx');
       document.body.appendChild(link);
       link.click();
       link.parentNode.removeChild(link);
@@ -742,9 +754,12 @@ const ImportPreviewPage = () => {
                           </div>
                         </td>
                         <td className="px-5 py-4 text-sm min-w-[400px]">
-                          {row.errors.length > 0 ? (
+                          {(row.errors.length > 0 || (row.emails_to_verify && row.emails_to_verify.some(ev => ev.status === 'INVALID'))) ? (
                             <ul className="list-disc pl-4 text-red-600 text-xs space-y-1 font-medium">
                               {row.errors.map((err, i) => <li key={i}>{err}</li>)}
+                              {row.emails_to_verify?.filter(ev => ev.status === 'INVALID').map((ev, i) => (
+                                <li key={`ev-${i}`}>Email verification failed ({ev.type}): {ev.reason || 'Invalid email'}</li>
+                              ))}
                             </ul>
                           ) : (
                             <span className="text-emerald-500 flex items-center gap-1 text-xs font-bold"><CheckCircle size={14}/> NO ERRORS</span>

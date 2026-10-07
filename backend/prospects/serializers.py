@@ -1,6 +1,6 @@
 from market_events.serializers import MarketEventSimpleSerializer
 from rest_framework import serializers
-from .models import Prospect, ProspectOffering, ProspectContact, AuditReverificationRequest, ProspectShareholding, GovernmentEntity
+from .models import Prospect, ProspectOffering, ProspectContact, AuditReverificationRequest, ProspectShareholding, GovernmentEntity, ProspectAcquisition
 
 class ProspectOfferingSerializer(serializers.ModelSerializer):
     class Meta:
@@ -83,6 +83,13 @@ class ProspectSimpleSerializer(serializers.ModelSerializer):
         model = Prospect
         fields = ['id', 'company_name', 'country_head_office', 'primary_industries', 'company_structure', 'operational_status', 'ownership_sector']
 
+class ProspectAcquisitionSerializer(serializers.ModelSerializer):
+    acquiring_prospect_detail = ProspectSimpleSerializer(source='acquiring_prospect', read_only=True)
+    
+    class Meta:
+        model = ProspectAcquisition
+        fields = ['id', 'acquiring_prospect', 'acquiring_prospect_detail', 'acquired_shares']
+
 class ProspectSerializer(serializers.ModelSerializer):
     parent_companies_detail = ProspectSimpleSerializer(source='parent_companies', many=True, read_only=True)
     child_companies_detail = ProspectSimpleSerializer(source='child_companies', many=True, read_only=True)
@@ -90,8 +97,11 @@ class ProspectSerializer(serializers.ModelSerializer):
     dissolved_companies_detail = ProspectSimpleSerializer(source='dissolved_companies', many=True, read_only=True)
     merged_into_prospects_detail = ProspectSimpleSerializer(source='merged_into_prospects', many=True, read_only=True)
     dissolved_into_prospects_detail = ProspectSimpleSerializer(source='dissolved_into_prospects', many=True, read_only=True)
-    acquiring_company_detail = ProspectSimpleSerializer(source='acquiring_company', read_only=True)
-    acquired_companies_detail = ProspectSimpleSerializer(source='acquired_companies', many=True, read_only=True)
+    
+    # New M2M related name
+    acquired_companies_detail = ProspectSimpleSerializer(source='acquired_companies_rev', many=True, read_only=True)
+    acquiring_companies = ProspectAcquisitionSerializer(source='acquisition_records', many=True, read_only=True)
+
 
     products = serializers.SerializerMethodField()
     services = serializers.SerializerMethodField()
@@ -129,6 +139,7 @@ class ProspectSerializer(serializers.ModelSerializer):
 
     # Internal writes for nested relationships
     offerings_data = ProspectOfferingSerializer(many=True, write_only=True, required=False)
+    acquiring_companies_data = serializers.ListField(child=serializers.DictField(), write_only=True, required=False)
 
     class Meta:
         model = Prospect
@@ -139,9 +150,9 @@ class ProspectSerializer(serializers.ModelSerializer):
             'operational_status', 'ownership_sector', 'parent_companies', 'parent_companies_detail', 'child_companies_detail',
             'merging_companies', 'merging_companies_detail', 'dissolved_companies', 'dissolved_companies_detail',
             'merged_into_prospects_detail', 'dissolved_into_prospects_detail',
-            'acquiring_company', 'acquiring_company_detail', 'acquired_shares', 'acquired_companies_detail',
+            'acquiring_companies', 'acquired_companies_detail',
             'primary_offering_type', 'products', 'services', 'solutions',
-            'offerings_data', 'key_contacts', 'shareholdings', 'created_at', 'updated_at',
+            'offerings_data', 'acquiring_companies_data', 'key_contacts', 'shareholdings', 'created_at', 'updated_at',
             'created_by', 'updated_by', 'market_events', 'market_event_ids', 'company_email_verification_status', 'qualification_status', 'pre_task_status', 'audit_reverify_fields'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by', 'market_events', 'market_event_ids', 'company_email_verification_status', 'qualification_status', 'pre_task_status', 'audit_reverify_fields']
@@ -198,6 +209,7 @@ class ProspectSerializer(serializers.ModelSerializer):
         merging_companies = validated_data.pop('merging_companies', [])
         dissolved_companies = validated_data.pop('dissolved_companies', [])
         market_event_ids = validated_data.pop('market_event_ids', [])
+        acquiring_companies_data = validated_data.pop('acquiring_companies_data', [])
 
         prospect = Prospect.objects.create(**validated_data)
 
@@ -243,6 +255,15 @@ class ProspectSerializer(serializers.ModelSerializer):
                 sh_data['company'] = prospect
             ProspectShareholding.objects.create(prospect=prospect, **sh_data)
 
+        if prospect.operational_status == Prospect.Status.ACQUIRED:
+            for acq in acquiring_companies_data:
+                ProspectAcquisition.objects.create(
+                    acquired_prospect=prospect,
+                    acquiring_prospect_id=acq.get('acquiring_company'),
+                    acquired_shares=acq.get('acquired_shares')
+                )
+
+
         # Always assign an LQ user immediately after creation.
         # This runs at the serializer level — the deepest possible hook —
         # so it works regardless of view, signal, or server state.
@@ -262,6 +283,7 @@ class ProspectSerializer(serializers.ModelSerializer):
         merging_companies = validated_data.pop('merging_companies', None)
         dissolved_companies = validated_data.pop('dissolved_companies', None)
         market_event_ids = validated_data.pop('market_event_ids', None)
+        acquiring_companies_data = validated_data.pop('acquiring_companies_data', None)
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
@@ -304,9 +326,15 @@ class ProspectSerializer(serializers.ModelSerializer):
             instance.dissolved_companies.clear()
 
         if instance.operational_status != Prospect.Status.ACQUIRED:
-            instance.acquiring_company = None
-            instance.acquired_shares = None
-            instance.save(update_fields=['acquiring_company', 'acquired_shares'])
+            instance.acquisition_records.all().delete()
+        elif acquiring_companies_data is not None:
+            instance.acquisition_records.all().delete()
+            for acq in acquiring_companies_data:
+                ProspectAcquisition.objects.create(
+                    acquired_prospect=instance,
+                    acquiring_prospect_id=acq.get('acquiring_company'),
+                    acquired_shares=acq.get('acquired_shares')
+                )
 
         if offerings_data is not None:
             instance.offerings.all().delete()

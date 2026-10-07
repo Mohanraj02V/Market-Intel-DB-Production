@@ -282,6 +282,72 @@ const ProspectDetailPage = () => {
                   </dd>
                 </div>
               )}
+
+              {p.acquiring_company_detail && (
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <dt className="text-xs font-medium text-slate-500 uppercase mb-2">Acquiring Company</dt>
+                  <dd className="flex items-center gap-2 mb-2">
+                    <Link to={`/prospects/${p.acquiring_company_detail.id}`} className="text-sm font-bold text-indigo-600 hover:underline flex items-center gap-1">
+                      <Building2 size={14} /> {p.acquiring_company_detail.company_name}
+                    </Link>
+                    {p.acquired_shares != null && (
+                      <span className="text-xs text-slate-500">({p.acquired_shares}% Shares)</span>
+                    )}
+                  </dd>
+                </div>
+              )}
+
+              {p.acquired_companies_detail && p.acquired_companies_detail.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <dt className="text-xs font-medium text-slate-500 uppercase mb-2">Acquired Companies</dt>
+                  <dd className="space-y-2">
+                    {p.acquired_companies_detail.map((mc, i) => (
+                      <div key={i} className="text-sm font-medium text-indigo-600">
+                        <Link to={`/prospects/${mc.id}`} className="hover:underline flex items-center gap-1">
+                          <Building2 size={14} /> {mc.company_name}
+                        </Link>
+                      </div>
+                    ))}
+                  </dd>
+                </div>
+              )}
+
+              {p.shareholdings && p.shareholdings.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <dt className="text-xs font-medium text-slate-500 uppercase mb-2">Stakeholders / Shareholders</dt>
+                  <dd className="space-y-2">
+                    {p.shareholdings.map((sh, i) => {
+                      let name = sh.other_name;
+                      let link = null;
+                      if (sh.holder_type === 'COMPANY' && sh.company_detail) {
+                        name = sh.company_detail.company_name;
+                        link = `/prospects/${sh.company_detail.id}`;
+                      } else if (sh.holder_type === 'INDIVIDUAL' && sh.contact_detail) {
+                        name = sh.contact_detail.contact_name;
+                      }
+                      
+                      return (
+                        <div key={i} className="text-sm flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
+                          <div className="flex items-center gap-2">
+                            {sh.holder_type === 'COMPANY' ? <Building2 size={14} className="text-slate-400" /> : <Users size={14} className="text-slate-400" />}
+                            {link ? (
+                              <Link to={link} className="font-medium text-indigo-600 hover:underline">{name}</Link>
+                            ) : (
+                              <span className="font-medium text-slate-800">{name}</span>
+                            )}
+                            <span className="text-[10px] text-slate-500 uppercase tracking-wider bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                              {sh.holder_type}
+                            </span>
+                          </div>
+                          {sh.share_percentage && (
+                            <span className="font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded text-xs">{sh.share_percentage}%</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </dd>
+                </div>
+              )}
             </div>
           </div>
 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">

@@ -212,8 +212,17 @@ def group_rows(source_rows, mapping):
         comp_name = clean_value(new_row.get('company_name')).lower()
         if comp_name and comp_name in grouped:
             entry = grouped[comp_name]
-            entry['data']['key_contacts'].extend(key_contacts)
-            entry['data']['offerings_data'].extend(offerings)
+            
+            # Deduplicate contacts
+            for kc in key_contacts:
+                if not any(c.get('contact_name') == kc.get('contact_name') and c.get('official_email') == kc.get('official_email') for c in entry['data']['key_contacts']):
+                    entry['data']['key_contacts'].append(kc)
+            
+            # Deduplicate offerings
+            for o in offerings:
+                if not any(e.get('offering_type') == o.get('offering_type') and e.get('name') == o.get('name') for e in entry['data']['offerings_data']):
+                    entry['data']['offerings_data'].append(o)
+                    
             entry['source_row_numbers'].append(source_row)
             existing = {n.casefold() for n in entry['parent_names']}
             entry['parent_names'].extend(n for n in parent_names if n.casefold() not in existing)
@@ -239,11 +248,11 @@ def build_emails_to_verify(data):
     company_email = clean_value(data.get('official_email_address'))
     if company_email:
         emails.append({'email': company_email, 'status': 'UNVERIFIED', 'type': 'company'})
-    for contact in data.get('key_contacts') or []:
+    for i, contact in enumerate(data.get('key_contacts') or []):
         c_email = clean_value(contact.get('official_email'))
         if c_email:
             emails.append({'email': c_email, 'status': 'UNVERIFIED', 'type': 'contact',
-                           'contact_name': contact.get('contact_name')})
+                           'contact_name': contact.get('contact_name'), 'contact_index': i})
     return emails
 
 
@@ -467,10 +476,12 @@ def _sanitize_source_rows(row_payload, fallback):
 def _email_check(item, client_emails):
     """Every email present in the row data must be verified VALID (existing rule)."""
     statuses = {}
+    print(f"DEBUG _email_check: client_emails={client_emails}")
     for ev in client_emails or []:
         if isinstance(ev, dict) and ev.get('email'):
             statuses[clean_value(ev['email']).casefold()] = ev.get('status')
     required = build_emails_to_verify(item.data)
+    print(f"DEBUG _email_check: required={required}, statuses={statuses}")
     for ev in required:
         status = statuses.get(ev['email'].casefold()) or 'UNVERIFIED'
         if status != 'VALID':
@@ -491,10 +502,43 @@ def import_single_row(item, parent_ids, emails, serializer_class, request):
         data.pop('parent_company_names', None)
         data['parent_companies'] = [str(pid) for pid in parent_ids]
         
-        # Pop unsupported relational fields to prevent validation errors
+        merging_names = parse_parent_company_names(data.pop('merging_companies', None))
+        dissolved_names = parse_parent_company_names(data.pop('dissolved_companies', None))
+        
+        acq_companies_raw = data.pop('acquiring_company', None)
+        acq_shares_raw = data.pop('acquired_shares', None)
+        acquiring_companies_data = []
+        if acq_companies_raw:
+            c_names = [x.strip() for x in str(acq_companies_raw).split(';') if x.strip()]
+            c_shares = [x.strip() for x in str(acq_shares_raw or '').split(';')]
+            for idx, c_name in enumerate(c_names):
+                share_val = None
+                if idx < len(c_shares) and c_shares[idx]:
+                    try:
+                        share_val = float(c_shares[idx])
+                    except ValueError:
+                        pass
+                
+                acq_p = Prospect.objects.filter(company_name__iexact=c_name).first()
+                if not acq_p:
+                    acq_p = Prospect.objects.create(
+                        company_name=c_name,
+                        company_structure='Independent',
+                        operational_status='Active'
+                    )
+                acquiring_companies_data.append({
+                    'acquiring_company': str(acq_p.id),
+                    'acquired_shares': share_val
+                })
+        data['acquiring_companies_data'] = acquiring_companies_data
+        
+        acquired_names = parse_parent_company_names(data.pop('acquired_companies', None))
+        shareholders_raw = data.pop('shareholders', None)
+        market_events_raw = data.pop('market_events', None)
+        
+        # Pop unsupported relational fields that might still be there
         data.pop('merging_companies', None)
         data.pop('dissolved_companies', None)
-        data.pop('acquiring_company', None)
         data.pop('acquired_companies', None)
         data.pop('shareholders', None)
 
@@ -524,6 +568,92 @@ def import_single_row(item, parent_ids, emails, serializer_class, request):
             except IntegrityError:
                 # Skip if a duplicate verification record somehow already exists
                 pass
+
+        # old acquiring_name logic removed
+        
+        for m_name in merging_names:
+            m_comp = Prospect.objects.filter(company_name__iexact=m_name).first()
+            if m_comp: prospect.merging_companies.add(m_comp)
+            
+        for d_name in dissolved_names:
+            d_comp = Prospect.objects.filter(company_name__iexact=d_name).first()
+            if d_comp: prospect.dissolved_companies.add(d_comp)
+            
+        for a_name in acquired_names:
+            a_comp = Prospect.objects.filter(company_name__iexact=a_name).first()
+            if a_comp:
+                a_comp.acquiring_company = prospect
+                a_comp.save(update_fields=['acquiring_company'])
+                
+        if shareholders_raw:
+            from .models import ProspectShareholding
+            import re
+            for sh_part in PARENT_NAME_DELIMITERS.split(str(shareholders_raw)):
+                sh_part = sh_part.strip()
+                if not sh_part: continue
+                try:
+                    name_type, perc_str = sh_part.rsplit(':', 1)
+                    perc = float(perc_str.strip())
+                    m = re.match(r'^(.*?)\s*\((.*?)\)$', name_type.strip())
+                    if m:
+                        name = m.group(1).strip()
+                        type_str = m.group(2).strip().lower()
+                    else:
+                        name = name_type.strip()
+                        type_str = 'other'
+                        
+                    holder_type = ProspectShareholding.HolderType.OTHER
+                    company = None
+                    contact = None
+                    other_name = None
+                    
+                    if type_str == 'company':
+                        holder_type = ProspectShareholding.HolderType.OTHER
+                        other_name = name
+                        c = Prospect.objects.filter(company_name__iexact=name).first()
+                        if c:
+                            holder_type = ProspectShareholding.HolderType.COMPANY
+                            company = c
+                            other_name = None
+                    elif type_str == 'individual':
+                        holder_type = ProspectShareholding.HolderType.OTHER
+                        other_name = name
+                        c = prospect.key_contacts.filter(contact_name__iexact=name).first()
+                        if c:
+                            holder_type = ProspectShareholding.HolderType.INDIVIDUAL
+                            contact = c
+                            other_name = None
+                    elif type_str in ('government', 'country', 'state'):
+                        holder_type = ProspectShareholding.HolderType.OTHER
+                        other_name = name
+                    else:
+                        holder_type = ProspectShareholding.HolderType.OTHER
+                        other_name = name
+                        
+                    ProspectShareholding.objects.create(
+                        prospect=prospect,
+                        holder_type=holder_type,
+                        company=company,
+                        contact=contact,
+                        other_name=other_name,
+                        share_percentage=perc
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to parse shareholder {sh_part}: {e}")
+
+        if market_events_raw:
+            from market_events.models import MarketEvent, MarketEventParticipation
+            for event_title in PARENT_NAME_DELIMITERS.split(str(market_events_raw)):
+                event_title = event_title.strip()
+                if not event_title: continue
+                try:
+                    event_obj, _ = MarketEvent.objects.get_or_create(event_title=event_title)
+                    MarketEventParticipation.objects.get_or_create(
+                        market_event=event_obj,
+                        prospect=prospect
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to create/assign market event {event_title}: {e}")
 
         assign_lq_to_prospect(prospect)
     return prospect

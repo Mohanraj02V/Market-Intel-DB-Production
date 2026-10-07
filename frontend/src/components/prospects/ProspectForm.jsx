@@ -94,8 +94,8 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
         })),
         merging_companies: prospect.merging_companies || [],
         dissolved_companies: prospect.dissolved_companies || [],
-        acquiring_company: prospect.acquiring_company || null,
-        acquired_shares: prospect.acquired_shares || ''
+        acquiring_company: (prospect.acquiring_companies && prospect.acquiring_companies.length > 0) ? prospect.acquiring_companies[0].acquiring_prospect : null,
+        acquired_shares: (prospect.acquiring_companies && prospect.acquiring_companies.length > 0) ? prospect.acquiring_companies[0].acquired_shares : ''
       });
     } else if (isOpen) {
       // Preserve form data (draft) when opening "Add New Prospect" unless we just came from editing
@@ -401,11 +401,20 @@ const ProspectForm = ({ isOpen, onClose, prospect = null, highlightFields = [], 
       }
 
       if (cleanData.operational_status !== 'Acquired') {
-        cleanData.acquiring_company = null;
-        cleanData.acquired_shares = null;
+        cleanData.acquiring_companies_data = [];
       } else {
-        if (cleanData.acquired_shares === '') cleanData.acquired_shares = null;
+        const shares = cleanData.acquired_shares !== '' && cleanData.acquired_shares !== null ? parseFloat(cleanData.acquired_shares) : null;
+        if (cleanData.acquiring_company) {
+            cleanData.acquiring_companies_data = [{
+                acquiring_company: cleanData.acquiring_company,
+                acquired_shares: shares
+            }];
+        } else {
+            cleanData.acquiring_companies_data = [];
+        }
       }
+      delete cleanData.acquiring_company;
+      delete cleanData.acquired_shares;
 
       // Clean offerings
       const offerings = [];
