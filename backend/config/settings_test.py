@@ -1,9 +1,10 @@
 """Tracked deterministic test settings for local and CI/CD test execution."""
 import os
+from cryptography.fernet import Fernet
 
 os.environ.setdefault('DEBUG', 'True')
 os.environ.setdefault('SECRET_KEY', 'ci-test-only-secret-key-not-for-production-use-0123456789')
-os.environ.setdefault('MAIL_CREDENTIALS_ENCRYPTION_KEY', 'V2h5VGhpc0lzQVRlc3RPbmx5RmVybmV0S2V5MTIzNDU=')
+os.environ.setdefault('MAIL_CREDENTIALS_ENCRYPTION_KEY', Fernet.generate_key().decode('ascii'))
 
 from config.settings import *  # noqa: F401, F403
 
@@ -23,6 +24,8 @@ CACHES = {
 }
 EMAIL_BACKEND = 'django.core.mail.backends.locmem.EmailBackend'
 EMAIL_TRACKING_BASE_URL = 'https://test-tracking.example.com'
+GOOGLE_OAUTH_CLIENT_ID = 'ci-test-google-client-id.apps.googleusercontent.com'
+GOOGLE_OAUTH_CLIENT_SECRET = 'ci-test-google-client-secret'
 SECURE_SSL_REDIRECT = False
 SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False

@@ -1,0 +1,9 @@
+# Verified non-secret test fixtures and documentation examples (historical commits).
+# Do NOT add real credentials here; rotate and revoke real secrets instead.
+b25d97d2d54a56a91e153786decaa8b37c410156:backend/config/settings_test.py:generic-api-key:6
+3947876d62aac9d12b5e1404fe2cd2ef4daa8c91:docs/WHATSAPP_MODULE_REVERSE_ENGINEERING_SPECIFICATION.md:generic-api-key:253
+b90f29d775b04ab37bdcb8e1d53f1b296501789e:backend/digital_marketing/tests.py:generic-api-key:385
+5dd2ff1d4b174c7342a39a05aa8750a358339c75:.github/workflows/quality-gates.yml:generic-api-key:37
+1468abda815fe5b5ee5e1876e8ff268810637ddc:.github/workflows/quality-gates.yml:generic-api-key:92
+1468abda815fe5b5ee5e1876e8ff268810637ddc:.github/workflows/quality-gates.yml:generic-api-key:120
+1468abda815fe5b5ee5e1876e8ff268810637ddc:.github/workflows/quality-gates.yml:generic-api-key:234
