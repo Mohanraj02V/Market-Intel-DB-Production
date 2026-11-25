@@ -204,7 +204,6 @@ class InstagramCallbackView(APIView):
             conn.metadata = {
                 'page_id': ig_info.get('page_id'),
                 'page_name': ig_info.get('page_name'),
-                'page_access_token': ig_info.get('page_access_token'),
                 'followers_count': ig_info.get('followers_count', 0),
                 'media_count': ig_info.get('media_count', 0),
                 'biography': ig_info.get('biography', ''),
@@ -1293,25 +1292,49 @@ class ConversationSyncView(APIView):
 class MetaWebhookView(APIView):
     """
     Receives real-time incoming messages from Meta (Instagram Direct & Facebook Messenger).
-    Verifies subscription handshake on GET, processes messaging events on POST.
+    Verifies subscription handshake on GET and enforces X-Hub-Signature-256 HMAC-SHA256 on POST.
     """
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def get(self, request):
         """Webhook verification handshake for Meta Developer App."""
         mode = request.query_params.get('hub.mode')
-        token = request.query_params.get('hub.verify_token')
-        challenge = request.query_params.get('hub.challenge')
+        token = request.query_params.get('hub.verify_token') or ''
+        challenge = request.query_params.get('hub.challenge') or ''
 
-        expected_token = os.getenv('META_WEBHOOK_VERIFY_TOKEN', 'market_intel_meta_webhook_2026')
-        if mode == 'subscribe' and token == expected_token:
+        expected_token = (os.getenv('META_WEBHOOK_VERIFY_TOKEN') or '').strip()
+        if not expected_token:
+            if getattr(settings, 'DEBUG', False):
+                expected_token = 'market_intel_meta_webhook_2026'
+            else:
+                return HttpResponse('Webhook verify token not configured', status=503)
+
+        if mode == 'subscribe' and hmac.compare_digest(token, expected_token):
             return HttpResponse(challenge, content_type='text/plain', status=200)
         return HttpResponse('Verification token mismatch', status=403)
 
     def post(self, request):
-        """Receives incoming message payloads from Meta."""
+        """Receives incoming message payloads from Meta after HMAC-SHA256 verification."""
+        body_bytes = request.body or b''
+        app_secret = (os.getenv('META_APP_SECRET') or '').strip()
+        if not app_secret:
+            logger.error('MetaWebhookView rejected POST because META_APP_SECRET is not configured.')
+            return HttpResponse('Webhook secret not configured', status=503)
+
+        sig_header = (request.headers.get('X-Hub-Signature-256') or '').strip()
+        if not sig_header.startswith('sha256='):
+            return HttpResponse('Missing or invalid webhook signature', status=403)
+
+        expected_sig = 'sha256=' + hmac.new(
+            app_secret.encode('utf-8'),
+            body_bytes,
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(expected_sig, sig_header):
+            return HttpResponse('Invalid webhook signature', status=403)
+
         try:
-            body_bytes = request.body
             payload = json.loads(body_bytes.decode('utf-8'))
         except Exception:
             return HttpResponse('Invalid payload', status=400)

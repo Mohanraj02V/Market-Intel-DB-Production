@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Calendar as CalendarIcon, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api from '../services/api';
+import { sanitizeReturnUrl } from '../utils/htmlSanitizer';
 
 const CalendarCallbackPage = () => {
   const [searchParams] = useSearchParams();
@@ -17,7 +18,7 @@ const CalendarCallbackPage = () => {
     const code = searchParams.get('code');
     const state = searchParams.get('state');
 
-    const returnUrl = localStorage.getItem('calendar_oauth_return_url') || '/prospects?tab=pipeline';
+    const returnUrl = sanitizeReturnUrl(localStorage.getItem('calendar_oauth_return_url'), '/prospects?tab=pipeline');
 
     if (error) {
       toast.error(`Google Calendar authorization was cancelled or denied: ${error}`);

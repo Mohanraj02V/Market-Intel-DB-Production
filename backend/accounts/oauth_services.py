@@ -67,23 +67,28 @@ class GoogleOAuthService:
         return url, signed_state
 
     @classmethod
-    def verify_state(cls, received_state, cookie_state=None):
+    def verify_state(cls, received_state, cookie_state=None, consume=True):
         """
-        Validates the OAuth state against cookie state and signed timestamp.
-        Prevents CSRF, tampering, and replay attacks.
+        Validates the OAuth state against cookie state, signed timestamp,
+        and single-use nonce consumption to prevent Login CSRF and replay attacks.
         """
         if not received_state:
             return False
 
-        if cookie_state and received_state != cookie_state:
+        if cookie_state is not None and received_state != cookie_state:
             return False
 
         signer = TimestampSigner(salt='google-oauth-state')
         try:
-            signer.unsign(received_state, max_age=cls.STATE_MAX_AGE)
-            return True
+            unsigned = signer.unsign(received_state, max_age=cls.STATE_MAX_AGE)
         except (BadSignature, SignatureExpired):
             return False
+
+        if consume:
+            from django.core.cache import cache
+            if not cache.add(f'google-login-oauth-state:{unsigned}', 1, cls.STATE_MAX_AGE):
+                return False
+        return True
 
     @classmethod
     def exchange_code_for_tokens(cls, code, redirect_uri=None):

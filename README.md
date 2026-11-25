@@ -1,57 +1,64 @@
 # MarketIntel DB
 
-A full-stack CRM and market-intelligence platform for Prospect Research Engineers (PRE) and Lead Qualifiers (LQ).
+A full-stack B2B CRM, outreach automation, meeting transcription, WhatsApp/RAG knowledge base, and digital marketing intelligence platform.
 
-## Architecture
+## Architecture (Hostinger VPS KVM 2)
 
-```
-Browser
-  └─► Static Host (React + Vite frontend)
-        └─► AWS EC2 (Nginx → Gunicorn → Django REST API)
-              ├─► PostgreSQL / Supabase
-              ├─► Gmail IMAP / SMTP (per-user mail accounts)
-              └─► Cloudflare R2 (optional object storage)
+```text
+Browser (HTTPS)
+  └─► Cloudflare DNS / Domain
+        └─► Hostinger VPS KVM 2 (Ubuntu 24.04 LTS + Nginx + Certbot TLS)
+              ├── Static React 19 + Vite 8 SPA (marketinteldbapp.hikasimat.com)
+              ├── Django 6.1 REST API Container (127.0.0.1:8000, Gunicorn)
+              ├── Email Campaign Worker Container (process_campaign_queue, 90s pacing)
+              ├── RAG Ingestion Worker Container (run_rag_worker)
+              ├── Managed PostgreSQL (pgvector)
+              └── External Integrations (Google, Zoom, Microsoft, Meta, Twitter, WAHA, CBE, AWS Bedrock/S3)
 ```
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 19, Vite 8, Redux Toolkit, Tailwind CSS v4 |
-| Backend | Django 6, Django REST Framework |
-| Auth | JWT (SimpleJWT) |
-| Database | PostgreSQL (Supabase in production) |
-| Backend hosting | AWS EC2 + Gunicorn + Nginx |
-| Frontend hosting | Static Host / Nginx |
+| Frontend | React 19, Vite 8, Redux Toolkit, Tailwind CSS v4, Axios |
+| Backend | Python 3.14, Django 6.1.1, Django REST Framework, Gunicorn |
+| Auth | HttpOnly Cookie JWT (SimpleJWT + rotation + blacklist) + CSRF enforcement |
+| Database | PostgreSQL with `pgvector` |
+| Production Hosting | Hostinger VPS KVM 2 (Docker Compose + Nginx + Certbot) |
+| CI/CD | GitHub Actions OIDC → HashiCorp Vault → Short-Lived SSH Certificates |
 
 ## Project Structure
 
-```
+```text
 Market-Intel-DB/
-├── backend/          # Django REST API
-│   ├── accounts/     # Auth, UserProfile, MailAccount (IMAP/SMTP)
-│   ├── prospects/    # Prospects, LQ Pipeline, Reminders, Outreach
-│   ├── market_events/# Market Events
-│   ├── companies/    # Companies
-│   └── config/       # Django settings, URLs, WSGI
-├── frontend/         # React + Vite SPA
-│   └── src/
-│       ├── app/      # Redux store
-│       ├── features/ # Redux slices (auth, prospects, marketEvents, lqPipeline, ...)
-│       ├── pages/    # Page components
-│       ├── components/ # Shared components (Layout, NotificationCenter, ...)
-│       ├── services/ # Axios API client + IndexedDB cache service
-│       └── router/   # React Router
-└── deploy/
-    └── aws/          # EC2 deployment scripts, Nginx config, systemd service
+├── backend/
+│   ├── accounts/          # Auth, JWT/CSRF, UserProfile, OAuth (Google/Zoom/Microsoft), Templates, Calendar, CBE
+│   ├── companies/         # Multi-company organization model
+│   ├── prospects/         # Prospects, Outreach Pipeline, Bulk Campaigns (90s), PreTasks, Meetings
+│   ├── market_events/     # Trade shows & market events
+│   ├── whatsapp/          # WAHA WhatsApp sessions, messaging, media, webhooks, SSRF protection
+│   ├── whatsapp_ai/       # AI WhatsApp auto-reply engine
+│   ├── rag/               # Knowledge Base (pgvector, Amazon Bedrock / Gemini embeddings, S3/local)
+│   ├── email_ai/          # AI email drafting & manager summaries
+│   ├── digital_marketing/ # Instagram, Facebook, Twitter/X, CMS & Search Console
+│   ├── transcriptions/    # Normalized Google Meet (CBE) & Zoom Cloud Recording transcripts
+│   ├── utils/             # Fernet encryption & shared IPv4/IPv6 SSRF protection
+│   └── config/            # Settings, URLs, WSGI, CI test settings
+├── frontend/              # React 19 + Vite 8 SPA
+├── deploy/
+│   ├── hostinger/         # Production Hostinger KVM 2 Dockerfile, Compose, Nginx, scripts, Vault OIDC
+│   └── aws/               # Legacy AWS deployment files (retained for rollback window)
+└── docs/
+    ├── SECURITY_AND_INFRASTRUCTURE_AUDIT.md
+    └── HOSTINGER_VPS_DEPLOYMENT.md
 ```
 
 ## Local Development
 
 ### Prerequisites
-- Python 3.12+
-- Node.js 20+
-- PostgreSQL 15+
+- Python 3.14 (matches `backend/.python-version` and Docker runtime)
+- Node.js 22+
+- PostgreSQL 15+ (with `pgvector`)
 
 ### Backend
 
@@ -60,127 +67,50 @@ cd backend
 python -m venv env
 source env/bin/activate        # Windows: env\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env           # fill in values
+cp .env.example .env           # configure local values
 python manage.py migrate
 python manage.py runserver
 ```
-
-Backend runs at `http://localhost:8000`.
 
 ### Frontend
 
 ```bash
 cd frontend
-npm install
-cp .env.example .env.local     # fill in values
+npm ci
+cp .env.example .env.local     # set VITE_API_BASE_URL=/api for Vite proxy
 npm run dev
 ```
 
-Frontend runs at `http://localhost:5173`.
+## Production Deployment (Hostinger VPS KVM 2)
 
-## Environment Variables
+See [`docs/HOSTINGER_VPS_DEPLOYMENT.md`](docs/HOSTINGER_VPS_DEPLOYMENT.md) for full server hardening, Vault OIDC SSH certificate setup, environment variable reference, automated encrypted backups, and rollback instructions.
 
-### Backend (`backend/.env`)
-
-See [`backend/.env.example`](backend/.env.example) for a full list. Key variables:
-
-| Variable | Purpose |
-|----------|---------|
-| `SECRET_KEY` | Django secret key |
-| `DEBUG` | `True` for local, `False` for production |
-| `DATABASE_URL` | PostgreSQL connection string (production) |
-| `ALLOWED_HOSTS` | Comma-separated allowed hosts |
-| `CORS_ALLOWED_ORIGINS` | Frontend origin(s) |
-| `MAIL_CREDENTIALS_ENCRYPTION_KEY` | Fernet key for IMAP/SMTP password encryption |
-| `EMAIL_TRACKING_BASE_URL` | Public backend URL for email open-tracking |
-
-### Frontend (`frontend/.env.local`)
-
-| Variable | Purpose |
-|----------|---------|
-| `VITE_API_BASE_URL` | Backend API URL, e.g. `https://YOUR_BACKEND_DOMAIN/api` |
-
-## AWS EC2 Deployment (Backend)
-
-See [`deploy/aws/`](deploy/aws/) for:
-- `setup_ec2.sh` — one-time EC2 instance setup
-- `deploy.sh` — idempotent code update and restart
-- `nginx.conf` — Nginx reverse-proxy configuration
-- `marketintel.service` — systemd Gunicorn service
-
-### Deploy a backend update
-
-```bash
-# On the EC2 instance:
-sudo -u marketintel bash /opt/marketintel/repo/deploy/aws/deploy.sh
-```
-
-This pulls the latest code, installs dependencies, runs migrations, collects static files, and restarts Gunicorn.
-
-## Frontend Deployment
-
-The frontend can be built as a static site and hosted on Nginx or any static host.
-Set the following environment variable during build:
-
-```
-VITE_API_BASE_URL=https://YOUR_BACKEND_DOMAIN/api
-```
-
-When using Nginx, ensure you route the SPA correctly by using `try_files $uri $uri/ /index.html`.
+- Active GitHub Actions workflow: [`.github/workflows/deploy-hostinger.yml`](.github/workflows/deploy-hostinger.yml)
+- Security & infrastructure audit: [`docs/SECURITY_AND_INFRASTRUCTURE_AUDIT.md`](docs/SECURITY_AND_INFRASTRUCTURE_AUDIT.md)
+- Legacy AWS deployment files remain in `deploy/aws/` for rollback during cutover verification.
 
 ## User Roles
 
 | Role | Access |
 |------|--------|
-| **PRE** (Prospect Research Engineer) | Prospects, Market Events (full CRUD), Key People, Tasks |
-| **LQ** (Lead Qualifier) | LQ Pipeline, Market Events (read-only), Key People, Inbox |
-| **Superuser/Admin** | All of the above + User Management |
-
-## Bulk Email Campaigns & Prospect Intelligence
-
-### 1. Sequential Bulk Email Campaigns (90-Second Interval)
-- **Controlled Pacing**: Sends each email sequentially with a strict **90-second minimum interval** between consecutive provider send operations. Later emails are never released prematurely if an earlier email takes time or requires retries.
-- **Database Queue**: Stored persistently in PostgreSQL (`EmailCampaign`, `EmailCampaignRecipient`, `EmailCampaignAttachment`) using row-level locking (`select_for_update`). Campaigns survive browser closures, API restarts, and worker restarts.
-- **Worker Execution**: Managed by the dedicated `process_campaign_queue` management command. Does not require Redis or Celery.
-- **Live Controls**: Users can pause, resume, and cancel campaigns from the Inbox interface, with real-time progress indicators and duration estimates `(N - 1) * 90s`.
-- **Full Deliverability Support**: Supports email templates, email signatures, multi-file attachments, and opt-in open tracking.
-
-#### Running the Campaign Worker
-**Development / Local:**
-```bash
-cd backend
-python manage.py process_campaign_queue --poll-interval 5
-# Or execute a single pass:
-python manage.py process_campaign_queue --run-once
-```
-
-**Production (systemd):**
-```bash
-sudo systemctl start marketintel-worker
-sudo systemctl status marketintel-worker
-sudo journalctl -u marketintel-worker -f
-```
-
-**Production (Docker Compose):**
-```bash
-docker compose -f deploy/aws/docker-compose.production.yml up -d campaign-worker
-docker compose -f deploy/aws/docker-compose.production.yml logs -f campaign-worker
-```
-
-### 2. Automatic Prospect Response Identification
-- **Accurate Inbound Matching**: Matches incoming email sender addresses (`From` header) against:
-  - Company official email (`Prospect.official_email_address`) -> attaches company badge & tag.
-  - Key contact official email (`ProspectContact.official_email`) -> attaches both company tag and key-person tag.
-- **Pipeline Access Control**: Strictly respects role-based visibility. PREs see their assigned prospects, LQs see their assigned pipeline, and Managers see all records.
-- **Virtual Prospect Responses Folder**: Dedicated view inside the existing Inbox (`/auth/mail-account/prospect-responses/`) leveraging Gmail server-side query batching (`from:(...)`) without modifying native Gmail folder labels.
+| **PRE** (Prospect Research Engineer) | Dashboard, Tasks, Prospects, Outreach, Email Campaigns, Calendar, Transcription, Inbox, WhatsApp, Government Entities, Key People, Market Events, Settings |
+| **MANAGER** | Manager Dashboard, Daily Audit, Company-scoped Team/Transcriptions/Tasks/Email Activity & Read-only CRM visibility |
+| **DM** (Digital Marketing) | Digital Marketing Workspace (Instagram, Facebook, Twitter/X, Ads Insights, Social Messages, CMS) |
+| **Superuser** | Full administrative access & User Management |
 
 ## Running Tests
 
+### Backend
 ```bash
 cd backend
-# Run all tests:
-python manage.py test
+python manage.py check --settings=config.settings_test
+python manage.py test accounts.test_security_hardening transcriptions.tests --settings=config.settings_test --verbosity=2
+```
 
-# Run new bulk campaign & prospect matching tests:
-python manage.py test prospects.test_bulk_campaigns prospects.test_prospect_matching
+### Frontend
+```bash
+cd frontend
+npm run lint
+npm test
+npm run build
 ```

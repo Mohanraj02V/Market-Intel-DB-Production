@@ -14,7 +14,6 @@ const EmailCampaignsPage = lazy(() => import('../pages/EmailCampaignsPage'));
 const ProspectDetailPage = lazy(() => import('../pages/ProspectDetailPage'));
 const GovernmentEntitiesPage = lazy(() => import('../pages/GovernmentEntitiesPage'));
 const ImportPreviewPage = lazy(() => import('../pages/ImportPreviewPage'));
-const LqPipelinePage = lazy(() => import('../pages/LqPipelinePage'));
 const LqPipelineDetailPage = lazy(() => import('../pages/LqPipelineDetailPage'));
 const KeyPeoplePage = lazy(() => import('../pages/KeyPeoplePage'));
 const KeyPersonDetailPage = lazy(() => import('../pages/KeyPersonDetailPage'));

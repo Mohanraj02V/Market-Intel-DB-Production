@@ -734,8 +734,11 @@ class GoogleCalendarSyncRecordingView(_CalendarBase):
             if not meeting.meeting_link:
                 meeting.meeting_link = meet_url
                 meeting.save(update_fields=['meeting_link', 'updated_at'])
-        elif meeting.google_calendar_owner_id not in (None, request.user.id) and meeting.created_by_id != request.user.id \
-                and not request.user.is_superuser:
+        elif (
+            not request.user.is_superuser
+            and meeting.google_calendar_owner_id != request.user.id
+            and meeting.created_by_id != request.user.id
+        ):
             return Response({'error': 'Only the meeting host can sync this recording.'}, status=status.HTTP_403_FORBIDDEN)
 
         res = GoogleMeetRestService.sync_meeting_recording(meeting)
@@ -854,9 +857,16 @@ class MeetingAutomationPollView(_CalendarBase):
     """
     POST /api/auth/calendar/automation/poll/
     Trigger dynamic multi-user calendar discovery & due meeting webhook dispatch.
+    Restricted to Managers and Superusers.
     """
 
     def post(self, request):
+        profile = getattr(request.user, "profile", None)
+        if not (request.user.is_superuser or (profile and profile.role == "MANAGER")):
+            return Response(
+                {"error": "Only Managers or Superusers can trigger global meeting polling."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         from .meeting_automation_service import process_due_scheduled_meetings
         res = process_due_scheduled_meetings()
         return Response(res, status=status.HTTP_200_OK)

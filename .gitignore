@@ -155,7 +155,6 @@ backend/scratch/
 **/scratch/
 *.tmp
 *.temp
-test_*.py
 
 # IDEs, Editors & AI Assistants
 .vscode/

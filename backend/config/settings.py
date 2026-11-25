@@ -4,7 +4,7 @@ import os
 from dotenv import load_dotenv
 import dj_database_url
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -13,18 +13,17 @@ DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
 _default_key = 'django-insecure-default-key-for-dev'
 SECRET_KEY = os.getenv('SECRET_KEY', _default_key)
-if not DEBUG and SECRET_KEY == _default_key:
-    raise ValueError("SECRET_KEY must be set in production!")
+if not DEBUG and (SECRET_KEY == _default_key or len(SECRET_KEY) < 32):
+    raise ValueError("SECRET_KEY must be set to a strong key (32+ chars) in production!")
 
 _default_allowed_hosts = [
     '127.0.0.1',
     'localhost',
-    'host.docker.internal',
     'marketintel.hikasimat.com',
     'marketinteldbapp.hikasimat.com',
-    '.hikasimat.com',
-    'accepting-chef-shoulder-identical.trycloudflare.com',
 ]
+if DEBUG:
+    _default_allowed_hosts.append('host.docker.internal')
 _env_allowed = [
     h.strip()
     for h in os.getenv('ALLOWED_HOSTS', '').split(',')
@@ -161,9 +160,13 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'accounts.authentication.CookieJWTAuthentication',
     ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
     'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 50,
+    'NUM_PROXIES': int(os.getenv('DRF_NUM_PROXIES', '1')),
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
@@ -175,8 +178,8 @@ SPECTACULAR_SETTINGS = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('JWT_ACCESS_TOKEN_MINUTES', '30'))),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.getenv('JWT_REFRESH_TOKEN_DAYS', '7'))),
     # Rotate refresh tokens on each use — old tokens become invalid.
     'ROTATE_REFRESH_TOKENS': os.getenv('JWT_ROTATE_REFRESH_TOKENS', 'True').lower() == 'true',
     # Blacklist old refresh tokens after rotation to prevent reuse.
@@ -186,14 +189,17 @@ SIMPLE_JWT = {
 }
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
-_default_cors_origins = [
+_prod_origins = [
+    'https://marketinteldbapp.hikasimat.com',
+    'https://marketintel.hikasimat.com',
+]
+_dev_origins = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'http://localhost:3000',
     'http://127.0.0.1:3000',
-    'https://marketinteldbapp.hikasimat.com',
-    'https://marketintel.hikasimat.com',
 ]
+_default_cors_origins = (_prod_origins + _dev_origins) if DEBUG else _prod_origins
 _env_cors = [
     origin.strip()
     for origin in os.getenv('CORS_ALLOWED_ORIGINS', '').split(',')
@@ -204,40 +210,37 @@ CORS_ALLOWED_ORIGINS = list(dict.fromkeys(_default_cors_origins + _env_cors))
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^http://localhost(:[0-9]+)?$",
     r"^http://127\.0\.0\.1(:[0-9]+)?$",
-    r"^https://.*\.hikasimat\.com$",
-]
-CORS_ORIGIN_REGEX_WHITELIST = CORS_ALLOWED_ORIGIN_REGEXES
+] if DEBUG else []
 
-# Allow cookies (JWT access/refresh) to be sent cross-origin
+# Allow cookies (JWT access/refresh + CSRF) to be sent cross-origin to explicitly allowed origins
 CORS_ALLOW_CREDENTIALS = True
 
 # ── CSRF ──────────────────────────────────────────────────────────────────────
-_default_csrf_origins = [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'https://marketinteldbapp.hikasimat.com',
-    'https://marketintel.hikasimat.com',
-]
+_default_csrf_origins = (_prod_origins + _dev_origins) if DEBUG else _prod_origins
 _env_csrf = [
     origin.strip()
     for origin in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',')
     if origin.strip()
 ]
 CSRF_TRUSTED_ORIGINS = list(dict.fromkeys(_default_csrf_origins + _env_csrf))
+CSRF_COOKIE_HTTPONLY = False
+
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 
 if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_HTTPONLY = True
-    # For cross-origin cookie sharing between Amplify and EC2, SameSite must be None and Secure must be True
-    SESSION_COOKIE_SAMESITE = 'None'
-    CSRF_COOKIE_SAMESITE = 'None'
-    SECURE_SSL_REDIRECT = True
-    SECURE_HSTS_SECONDS = 31536000
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
+    # Allow cross-origin cookie sharing when frontend & API are on separate origins;
+    # can be tightened to 'Lax' via env once served under the same site/domain.
+    SESSION_COOKIE_SAMESITE = os.getenv('SESSION_COOKIE_SAMESITE', 'None')
+    CSRF_COOKIE_SAMESITE = os.getenv('CSRF_COOKIE_SAMESITE', 'None')
+    SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'true').lower() == 'true'
+    SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', '31536000'))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv('SECURE_HSTS_INCLUDE_SUBDOMAINS', 'false').lower() == 'true'
+    SECURE_HSTS_PRELOAD = os.getenv('SECURE_HSTS_PRELOAD', 'false').lower() == 'true'
 
 # ── Email open tracking ───────────────────────────────────────────────────────
 # Set to the public backend URL in production (e.g. https://YOUR_BACKEND_DOMAIN).

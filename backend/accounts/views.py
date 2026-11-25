@@ -39,7 +39,7 @@ class RefreshThrottle(UserRateThrottle):
 class RefreshAnonThrottle(AnonRateThrottle):
     rate = '20/minute'
 
-def set_jwt_cookies(response, access_token, refresh_token):
+def set_jwt_cookies(response, access_token, refresh_token, request=None):
     cookie_kwargs = {
         'httponly': True,
         'secure': getattr(settings, 'SESSION_COOKIE_SECURE', False),
@@ -51,9 +51,31 @@ def set_jwt_cookies(response, access_token, refresh_token):
     
     response.set_cookie('access_token', access_token, expires=access_expires, **cookie_kwargs)
     response.set_cookie('refresh_token', refresh_token, expires=refresh_expires, **cookie_kwargs)
+    if request is not None:
+        from django.middleware.csrf import get_token
+        get_token(request)
     return response
 
+
+def clear_jwt_cookies(response):
+    samesite = getattr(settings, 'SESSION_COOKIE_SAMESITE', 'Lax')
+    response.delete_cookie('access_token', path='/', samesite=samesite)
+    response.delete_cookie('refresh_token', path='/', samesite=samesite)
+    return response
+
+
+class CsrfTokenView(APIView):
+    """Issue/refresh a CSRF cookie and return the token for cross-origin SPA clients."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from django.middleware.csrf import get_token
+        token = get_token(request)
+        return Response({'csrfToken': token}, status=status.HTTP_200_OK)
+
+
 class CookieTokenObtainPairView(TokenObtainPairView):
+    permission_classes = [AllowAny]
     throttle_classes = [LoginThrottle]
     serializer_class = EmailTokenObtainPairSerializer
 
@@ -63,37 +85,43 @@ class CookieTokenObtainPairView(TokenObtainPairView):
             access = response.data.get('access')
             refresh = response.data.get('refresh')
             if access and refresh:
-                set_jwt_cookies(response, access, refresh)
+                set_jwt_cookies(response, access, refresh, request=request)
                 if 'refresh' in response.data:
                     del response.data['refresh']
         return response
 
 class CookieTokenRefreshView(TokenRefreshView):
+    permission_classes = [AllowAny]
     throttle_classes = [RefreshAnonThrottle, RefreshThrottle]
 
     def post(self, request, *args, **kwargs):
         data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+        using_cookie = False
         if 'refresh' not in data:
             cookie_refresh = request.COOKIES.get('refresh_token')
             if cookie_refresh:
                 data['refresh'] = cookie_refresh
+                using_cookie = True
             else:
                 return Response({"detail": "Refresh token missing."}, status=status.HTTP_401_UNAUTHORIZED)
-                
+
+        if using_cookie:
+            from .authentication import CookieJWTAuthentication
+            CookieJWTAuthentication().enforce_csrf(request)
+
         serializer = self.get_serializer(data=data)
         try:
             serializer.is_valid(raise_exception=True)
         except InvalidToken as e:
             response = Response({"detail": str(e)}, status=status.HTTP_401_UNAUTHORIZED)
-            response.delete_cookie('access_token')
-            response.delete_cookie('refresh_token')
+            clear_jwt_cookies(response)
             return response
 
         response = Response(serializer.validated_data, status=status.HTTP_200_OK)
         access = serializer.validated_data.get('access')
         refresh = serializer.validated_data.get('refresh', data.get('refresh'))
         if access:
-            set_jwt_cookies(response, access, refresh)
+            set_jwt_cookies(response, access, refresh, request=request)
             if 'refresh' in response.data:
                 del response.data['refresh']
         return response
@@ -104,6 +132,7 @@ class GoogleOAuthURLView(APIView):
     Returns the Google OAuth 2.0 authorization URL for user login.
     Signs and sets an HttpOnly oauth_state cookie to prevent CSRF.
     """
+    permission_classes = [AllowAny]
     throttle_classes = [LoginThrottle]
 
     def get(self, request):
@@ -130,6 +159,7 @@ class GoogleOAuthLoginView(APIView):
     authenticates the matching existing active Django User, and issues SimpleJWT tokens.
     Strictly enforces existing-user-only policy (never creates or provisions users).
     """
+    permission_classes = [AllowAny]
     throttle_classes = [LoginThrottle]
 
     def post(self, request):
@@ -199,7 +229,7 @@ class GoogleOAuthLoginView(APIView):
         access = str(refresh.access_token)
 
         response = Response({"access": access}, status=status.HTTP_200_OK)
-        set_jwt_cookies(response, access, str(refresh))
+        set_jwt_cookies(response, access, str(refresh), request=request)
         response.delete_cookie('oauth_state')
         return response
 
@@ -210,6 +240,7 @@ class GoogleOAuthCallbackView(APIView):
     Establishes the session via HttpOnly cookies and redirects to frontend.
     Never exposes JWT tokens in query strings.
     """
+    permission_classes = [AllowAny]
     throttle_classes = [LoginThrottle]
 
     def get(self, request):
@@ -555,6 +586,24 @@ class UserMeView(APIView):
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all().select_related('profile').order_by('-date_joined')
     serializer_class = UserSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        if user.is_superuser:
+            return qs
+        profile = getattr(user, 'profile', None)
+        if profile and profile.role == 'MANAGER':
+            from django.db.models import Q
+            if self.action in ('destroy', 'update', 'partial_update'):
+                # Allow update/destroy handlers to return explicit 403 PermissionDenied on superusers
+                if profile.company_id:
+                    return qs.filter(Q(profile__company_id=profile.company_id) | Q(is_superuser=True))
+                return qs
+            if profile.company_id:
+                return qs.filter(profile__company_id=profile.company_id, is_superuser=False)
+            return qs.filter(is_superuser=False)
+        return qs.none()
 
     def get_permissions(self):
         """

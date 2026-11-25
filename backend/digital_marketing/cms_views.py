@@ -18,6 +18,7 @@ from django.utils.text import slugify
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
 from accounts.permissions import IsDigitalMarketing
@@ -820,6 +821,10 @@ class GoogleAnalyticsDashboardAPIView(APIView):
         }, status=status.HTTP_201_CREATED)
 
 
+class _AnalyticsCollectThrottle(AnonRateThrottle):
+    rate = '60/minute'
+
+
 class GoogleAnalyticsCollectAPIView(APIView):
     """
     Real-Time Analytics Event Collector for Market Intel CMS.
@@ -827,6 +832,7 @@ class GoogleAnalyticsCollectAPIView(APIView):
     tracking code or UI test triggers.
     """
     permission_classes = [AllowAny]
+    throttle_classes = [_AnalyticsCollectThrottle]
 
     def post(self, request):
         now = timezone.now()
@@ -1206,12 +1212,15 @@ class SearchConsoleDomainVerifyAPIView(APIView):
                 pass
         elif method == 'HTML_META':
             try:
+                from utils.url_security import safe_urlopen, SSRFBlockedError
                 url = f"https://{domain_name}"
                 req = urllib.request.Request(url, headers={'User-Agent': 'MarketIntel-GoogleVerification/1.0'})
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    html = resp.read().decode('utf-8', errors='ignore')
+                with safe_urlopen(req, timeout=5, allowed_schemes=('https',)) as resp:
+                    html = resp.read(512 * 1024).decode('utf-8', errors='ignore')
                     if token in html and 'google-site-verification' in html:
                         verification_detail = f"Live HTML meta tag verification succeeded on {url}."
+            except SSRFBlockedError as se:
+                return Response({'error': f'Blocked unsafe domain target: {se}'}, status=status.HTTP_400_BAD_REQUEST)
             except Exception:
                 pass
 
@@ -1348,21 +1357,24 @@ class SearchConsoleIndexingAPIView(APIView):
             canonical_tag = target_url
             is_ssl = target_url.startswith('https://')
             try:
+                from utils.url_security import safe_urlopen, SSRFBlockedError
                 t0 = time.time()
                 req = urllib.request.Request(
                     target_url,
                     headers={'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'}
                 )
-                with urllib.request.urlopen(req, timeout=8) as resp:
+                with safe_urlopen(req, timeout=8) as resp:
                     http_status = resp.getcode()
                     latency_ms = round((time.time() - t0) * 1000)
-                    html = resp.read().decode('utf-8', errors='ignore')
+                    html = resp.read(512 * 1024).decode('utf-8', errors='ignore')
                     canon_match = re.search(r'<link[^>]+rel=["\']canonical["\'][^>]+href=["\']([^"\']+)["\']', html, re.IGNORECASE)
                     if canon_match:
                         canonical_tag = canon_match.group(1)
                     robots_match = re.search(r'<meta[^>]+name=["\']robots["\'][^>]+content=["\']([^"\']+)["\']', html, re.IGNORECASE)
                     if robots_match:
                         robots_directive = robots_match.group(1)
+            except SSRFBlockedError as se:
+                return Response({'error': f'Blocked disallowed inspection URL: {se}'}, status=status.HTTP_400_BAD_REQUEST)
             except urllib.error.HTTPError as he:
                 http_status = he.code
             except Exception:

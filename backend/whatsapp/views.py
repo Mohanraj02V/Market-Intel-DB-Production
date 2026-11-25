@@ -2101,17 +2101,19 @@ class WhatsAppProfilePicView(APIView):
             if not conv and "@" not in chat_id:
                 conv = conv_qs.filter(chat_id__startswith=chat_id).first()
 
-        # 1. Custom avatar on conversation
+        # 1. Custom avatar on conversation (strictly raster images; block SVG XSS)
         if conv and conv.custom_avatar_url:
             raw_url = conv.custom_avatar_url.strip()
             if raw_url.startswith("data:image"):
                 try:
                     header, encoded = raw_url.split(",", 1)
-                    mime = header.split(";")[0].split(":")[1]
-                    decoded = base64.b64decode(encoded)
-                    response = HttpResponse(decoded, content_type=mime)
-                    response["Cache-Control"] = "public, max-age=86400"
-                    return response
+                    mime = header.split(";")[0].split(":")[1].strip().lower()
+                    if mime in ("image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"):
+                        decoded = base64.b64decode(encoded)
+                        response = HttpResponse(decoded, content_type=mime)
+                        response["Cache-Control"] = "public, max-age=86400"
+                        response["X-Content-Type-Options"] = "nosniff"
+                        return response
                 except Exception:
                     pass
             elif raw_url.startswith("http://") or raw_url.startswith("https://") or raw_url.startswith("/media/"):
@@ -3578,6 +3580,15 @@ class WhatsAppCallRecordingUploadView(APIView):
         file_obj = request.FILES.get("file")
         if not file_obj:
             return Response({"error": "Recording file is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if file_obj.size > 30 * 1024 * 1024:
+            return Response({"error": "Recording file exceeds maximum size of 30 MB."}, status=status.HTTP_400_BAD_REQUEST)
+
+        raw_mime = (getattr(file_obj, "content_type", "") or "").split(";")[0].strip().lower()
+        allowed_audio_mimes = {
+            "audio/webm", "audio/ogg", "audio/mpeg", "audio/mp3",
+            "audio/mp4", "audio/wav", "audio/x-wav", "audio/aac", "video/webm",
+        }
+        safe_mime = raw_mime if raw_mime in allowed_audio_mimes else "audio/webm"
 
         # Enforce consent confirmation
         consent_raw = request.data.get("consent_confirmed")
@@ -3616,7 +3627,7 @@ class WhatsAppCallRecordingUploadView(APIView):
             direction=direction,
             recording_file=file_obj,
             duration_seconds=duration_seconds,
-            file_format=file_obj.content_type or "audio/webm",
+            file_format=safe_mime,
             file_size_bytes=file_obj.size,
             status=WhatsAppCallRecording.Status.COMPLETED,
             consent_confirmed=True,
@@ -3671,7 +3682,16 @@ class WhatsAppCallRecordingStreamView(APIView):
             return Response({"detail": "Recording file not found."}, status=status.HTTP_404_NOT_FOUND)
 
         try:
-            return FileResponse(rec.recording_file.open("rb"), content_type=rec.file_format or "audio/webm")
+            allowed_stream_mimes = {
+                "audio/webm", "audio/ogg", "audio/mpeg", "audio/mp3",
+                "audio/mp4", "audio/wav", "audio/x-wav", "audio/aac", "video/webm",
+            }
+            stream_mime = (rec.file_format or "").split(";")[0].strip().lower()
+            if stream_mime not in allowed_stream_mimes:
+                stream_mime = "audio/webm"
+            resp = FileResponse(rec.recording_file.open("rb"), content_type=stream_mime)
+            resp["X-Content-Type-Options"] = "nosniff"
+            return resp
         except Exception as e:
             logger.error("Failed to stream recording %s: %s", recording_id, e)
             return Response({"detail": "Could not read recording file."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

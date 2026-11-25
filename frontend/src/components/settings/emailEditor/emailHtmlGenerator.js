@@ -108,14 +108,13 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
 }[c]));
 
 export const safeUrl = (u) => {
-  const s = String(u || '').trim();
-  if (/^(https?:\/\/|mailto:|tel:|#|\/)/i.test(s) || /\{\{[a-zA-Z0-9_]+\}\}/i.test(s)) {
-    return s.replace(/"/g, '&quot;');
+  const s = String(u || '').trim().replace(/[\u0000-\u001F\u007F]+/g, '');
+  if (!s) return '';
+  if (/^(javascript|vbscript|data):/i.test(s)) return '';
+  if (/^(https?:\/\/|mailto:|tel:|#|\/)/i.test(s) || /^\{\{[a-zA-Z0-9_]+\}\}$/.test(s)) {
+    return esc(s);
   }
-  if (s) {
-    return `https://${s}`.replace(/"/g, '&quot;');
-  }
-  return '';
+  return esc(`https://${s}`);
 };
 
 /**

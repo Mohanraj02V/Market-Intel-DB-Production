@@ -441,36 +441,21 @@ def _is_ssrf_safe_url(url: str, allowed_base: str) -> bool:
     """
     Returns True only if *url* is safe to fetch:
     - Scheme must be http or https.
-    - Hostname must resolve to a public, non-RFC-1918 IP address.
+    - Every DNS-resolved IPv4 and IPv6 address must be publicly routable
+      (blocking private, loopback, link-local, metadata, CGNAT, and mapped IPv6).
     - Allows any URL whose hostname matches the configured WHATSAPP_SERVICE_URL host.
     """
-    _PRIVATE_NETWORKS = [
-        ipaddress.ip_network('10.0.0.0/8'),
-        ipaddress.ip_network('172.16.0.0/12'),
-        ipaddress.ip_network('192.168.0.0/16'),
-        ipaddress.ip_network('127.0.0.0/8'),
-        ipaddress.ip_network('169.254.0.0/16'),  # link-local / cloud metadata
-        ipaddress.ip_network('::1/128'),
-        ipaddress.ip_network('fc00::/7'),
-    ]
+    from utils.url_security import validate_safe_external_url
     try:
-        parsed = urllib.parse.urlparse(url)
-        if parsed.scheme not in ('http', 'https'):
-            return False
-        hostname = parsed.hostname or ''
-        # Always allow the configured WAHA server
-        allowed_host = urllib.parse.urlparse(allowed_base).hostname or ''
-        if hostname == allowed_host:
-            return True
-        # Resolve hostname and check against private ranges
-        ip_str = socket.gethostbyname(hostname)
-        ip_obj = ipaddress.ip_address(ip_str)
-        for net in _PRIVATE_NETWORKS:
-            if ip_obj in net:
-                return False
-        return True
+        allowed_host = (urllib.parse.urlparse(allowed_base).hostname or '').strip().lower()
+        ok, _ = validate_safe_external_url(
+            url,
+            allowed_schemes=('http', 'https'),
+            allow_hostnames=(allowed_host,) if allowed_host else (),
+        )
+        return ok
     except Exception:
-        return False  # if we cannot resolve, block it
+        return False
 
 
 def _download_and_save_media_bg(message_id, session_name: str, media_url: str = None, mime_type: str = None):
@@ -517,11 +502,20 @@ def _download_and_save_media_bg(message_id, session_name: str, media_url: str = 
                 pass
             continue
         try:
+            from utils.url_security import safe_urlopen
             req = urllib.request.Request(url)
-            if api_key:
+            req_host = (urllib.parse.urlparse(url).hostname or '').strip().lower()
+            waha_host = (urllib.parse.urlparse(waha_url).hostname or '').strip().lower()
+            # Only attach WAHA API key when talking to the configured WAHA host
+            if api_key and req_host and req_host == waha_host:
                 req.add_header('X-Api-Key', api_key)
 
-            with urllib.request.urlopen(req, timeout=30) as response:
+            with safe_urlopen(
+                req,
+                timeout=30,
+                allowed_schemes=('http', 'https'),
+                allow_hostnames=(waha_host,) if waha_host else (),
+            ) as response:
                 content = response.read()
                 content_type = response.headers.get('Content-Type', '') or mime_type or 'application/octet-stream'
                 ext = mimetypes.guess_extension(content_type.split(';')[0]) or '.bin'

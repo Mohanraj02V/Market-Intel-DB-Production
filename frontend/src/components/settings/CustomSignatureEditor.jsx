@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { designApi, errorMessage } from '../../services/designApi';
+import { sanitizeHtml } from '../../utils/htmlSanitizer';
 
 const cleanUrl = (u) => {
   if (!u) return '';
@@ -723,7 +724,7 @@ const CustomSignatureEditor = ({ id, onClose, onSaved }) => {
             {isHtmlMode ? (
               htmlCode ? (
                 <div
-                  dangerouslySetInnerHTML={{ __html: htmlCode }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtml(htmlCode) }}
                   className="prose prose-xs max-w-none"
                 />
               ) : (
@@ -732,7 +733,7 @@ const CustomSignatureEditor = ({ id, onClose, onSaved }) => {
             ) : (
               /* Rendered structured text signature */
               <div
-                dangerouslySetInnerHTML={{ __html: fullHtml }}
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(fullHtml) }}
                 className="select-text"
               />
             )}

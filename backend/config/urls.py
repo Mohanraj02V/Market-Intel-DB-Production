@@ -1,9 +1,22 @@
 from django.contrib import admin
+from django.db import connection
+from django.http import JsonResponse
 from django.urls import path, include
 from django.shortcuts import redirect
 from django.conf import settings
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 from rest_framework.permissions import IsAdminUser
+
+
+def health_check(request):
+    """Lightweight liveness/readiness endpoint without leaking secrets or host metadata."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+        return JsonResponse({"status": "ok", "database": "ok"}, status=200)
+    except Exception:
+        return JsonResponse({"status": "degraded", "database": "error"}, status=503)
 
 
 def redirect_to_frontend(request, route_path=''):
@@ -16,6 +29,7 @@ def redirect_to_frontend(request, route_path=''):
 
 
 urlpatterns = [
+    path('api/health/', health_check, name='api-health'),
     path('admin/', admin.site.urls),
     path('api/auth/', include('accounts.urls')),
     path('api/', include('email_ai.urls')),

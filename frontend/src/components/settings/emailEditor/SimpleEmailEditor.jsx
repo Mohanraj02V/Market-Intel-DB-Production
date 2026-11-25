@@ -2947,7 +2947,7 @@ const SimpleEmailEditor = forwardRef(function SimpleEmailEditor(
               <div className="flex-1 bg-slate-200/80 overflow-auto flex justify-center p-6">
                 <iframe
                   title="Live Email Preview"
-                  sandbox="allow-same-origin allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
+                  sandbox="allow-popups allow-popups-to-escape-sandbox"
                   srcDoc={fillSample(generateEmailHtml({ blocks, globalStyles, kind }))}
                   style={{
                     width: previewModal.mobile ? '375px' : '100%',

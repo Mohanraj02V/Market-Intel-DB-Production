@@ -445,32 +445,44 @@ def convert_base64_images_to_cid(html_str, domain='local'):
         if not rel_path:
             return match.group(0)
         import urllib.parse
-        rel_path = urllib.parse.unquote(rel_path)
+        from pathlib import Path
+        rel_path = urllib.parse.unquote(rel_path).replace('\\', '/').lstrip('/')
 
+        # Block path traversal, private RAG files, and non-image extensions
+        path_parts = [p for p in rel_path.split('/') if p]
+        if not path_parts or any(p in ('.', '..') for p in path_parts):
+            return match.group(0)
+        if path_parts[0].lower() in ('rag_private', 'rag'):
+            return match.group(0)
+
+        ext = os.path.splitext(rel_path)[1].lower().lstrip('.')
+        if ext not in ('png', 'jpeg', 'jpg', 'gif', 'webp'):
+            return match.group(0)
+
+        safe_rel = '/'.join(path_parts)
         img_bytes = None
         try:
-            if default_storage.exists(rel_path):
-                with default_storage.open(rel_path, 'rb') as f:
+            if default_storage.exists(safe_rel):
+                with default_storage.open(safe_rel, 'rb') as f:
                     img_bytes = f.read()
         except Exception:
             pass
 
         if not img_bytes and hasattr(settings, 'MEDIA_ROOT') and settings.MEDIA_ROOT:
-            local_path = os.path.join(settings.MEDIA_ROOT, rel_path.replace('/', os.sep))
-            if os.path.isfile(local_path):
-                try:
-                    with open(local_path, 'rb') as f:
-                        img_bytes = f.read()
-                except Exception:
-                    pass
+            try:
+                media_root = Path(settings.MEDIA_ROOT).resolve()
+                candidate = (media_root / safe_rel).resolve()
+                # Strict containment check inside MEDIA_ROOT
+                candidate.relative_to(media_root)
+                if candidate.is_file():
+                    img_bytes = candidate.read_bytes()
+            except Exception:
+                return match.group(0)
 
         if not img_bytes:
             return match.group(0)
 
-        ext = os.path.splitext(rel_path)[1].lower().lstrip('.')
-        subtype = ext if ext in ('png', 'jpeg', 'jpg', 'gif', 'webp') else 'png'
-        if subtype == 'jpg':
-            subtype = 'jpeg'
+        subtype = 'jpeg' if ext == 'jpg' else ext
 
         cid = make_msgid(domain=domain)[1:-1]
         inline_images.append((cid, subtype, img_bytes))

@@ -4,7 +4,7 @@ import mimetypes
 import uuid
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework.decorators import action, api_view
+from rest_framework.decorators import action, api_view, permission_classes
 from accounts.permissions import IsPRE, IsLQ, IsPREOrLQ, IsManagerOrSuperuser, IsLQOrManager
 from rest_framework import viewsets, filters, status, permissions
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
@@ -472,8 +472,9 @@ class ProspectViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Cannot merge a company with itself.'}, status=status.HTTP_400_BAD_REQUEST)
             
         try:
-            owner_company = Prospect.objects.get(id=owner_company_id)
-            merged_company = Prospect.objects.get(id=company_to_merge_id)
+            scoped_qs = self.get_queryset()
+            owner_company = scoped_qs.get(id=owner_company_id)
+            merged_company = scoped_qs.get(id=company_to_merge_id)
         except Prospect.DoesNotExist:
             return Response({'error': 'One or both companies not found.'}, status=status.HTTP_404_NOT_FOUND)
             
@@ -552,9 +553,6 @@ class LQPipelineViewSet(viewsets.ModelViewSet):
         if is_uuid:
             queryset = self.filter_queryset(self.get_queryset())
             obj = queryset.filter(prospect__id=uuid_obj).first()
-            if not obj:
-                # Fallback to general model queryset if not filtered in
-                obj = LeadQualification.objects.select_related('prospect').filter(prospect__id=uuid_obj).first()
             if not obj:
                 from django.http import Http404
                 raise Http404("No LeadQualification matches the given prospect UUID.")
@@ -760,23 +758,24 @@ class CallbackReminderViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         user = getattr(self.request, 'user', None)
-        is_manager = (
-            user and not user.is_superuser and
-            hasattr(user, 'profile') and
-            getattr(user.profile, 'role', None) == 'MANAGER'
-        )
-        if is_manager:
+        role = getattr(getattr(user, 'profile', None), 'role', None)
+        if user and not user.is_superuser and role == 'MANAGER':
             if self.action in ['list', 'retrieve', 'pending']:
                 return [IsManagerOrSuperuser()]
             raise PermissionDenied('Managers cannot modify reminders.')
-        return [IsAuthenticated()]
+        return [IsPREOrLQ()]
 
     def get_queryset(self):
         queryset = CallbackReminder.objects.filter(is_completed=False).order_by('scheduled_datetime')
         user = self.request.user
-        if not user.is_superuser and hasattr(user, 'profile') and user.profile.role in ('PRE', 'LQ'):
-            queryset = apply_lq_distribution_filter(queryset, user, 'prospect_id__')
-        return queryset
+        if user.is_superuser:
+            return queryset
+        role = getattr(getattr(user, 'profile', None), 'role', None)
+        if role in ('PRE', 'LQ'):
+            return apply_lq_distribution_filter(queryset, user, 'prospect_id__')
+        if role == 'MANAGER':
+            return queryset
+        return CallbackReminder.objects.none()
 
     def perform_create(self, serializer):
         serializer.save()
@@ -807,7 +806,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_permissions(self):
-        return [IsAuthenticated()]
+        return [IsLQOrManager()]
 
     def get_queryset(self):
         user = self.request.user
@@ -815,9 +814,12 @@ class MeetingViewSet(viewsets.ModelViewSet):
         # Superusers see all meetings
         if user.is_superuser:
             return queryset
-        if hasattr(user, 'profile') and user.profile.role in ('PRE', 'LQ'):
+        role = getattr(getattr(user, 'profile', None), 'role', None)
+        if role in ('PRE', 'LQ'):
             return apply_lq_distribution_filter(queryset, user, 'prospect_id__')
-        return queryset
+        if role == 'MANAGER':
+            return queryset
+        return Meeting.objects.none()
 
     # ── Multi-Provider Meeting Integration (Google Meet, Zoom, Microsoft Teams) ─────
     # Manual calendar feature has been removed: all meetings require a supported provider.
@@ -1576,24 +1578,22 @@ class OutreachEmailViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_permissions(self):
-        if self.action in ['tracking_stats', 'simulate_open', 'by_token', 'tracking_config']:
-            return [permissions.IsAuthenticated()]
         return [IsLQOrManager()]
 
     def get_queryset(self):
         user = self.request.user
-        if self.action in ['tracking_stats', 'simulate_open', 'by_token']:
-            return OutreachEmail.objects.all()
-        if hasattr(user, 'profile') and user.profile.role not in ['LQ', 'PRE', 'MANAGER'] and not user.is_superuser:
+        role = getattr(getattr(user, 'profile', None), 'role', None)
+        if not user.is_superuser and role not in ('LQ', 'PRE', 'MANAGER'):
             return OutreachEmail.objects.none()
         queryset = OutreachEmail.objects.all().order_by('-created_at')
         prospect_id = self.request.query_params.get('prospect')
         if prospect_id:
             queryset = queryset.filter(prospect_id=prospect_id)
-            
-        if not user.is_superuser and hasattr(user, 'profile') and user.profile.role in ('PRE', 'LQ'):
-            queryset = apply_lq_distribution_filter(queryset, user, 'prospect_id__')
-            
+
+        if not user.is_superuser and role in ('PRE', 'LQ'):
+            from django.db.models import Q
+            queryset = queryset.filter(Q(created_by=user) | Q(prospect__created_by=user.username))
+
         return queryset
 
     @action(detail=False, methods=['get'], url_path='tracking-config')
@@ -1625,16 +1625,17 @@ class OutreachEmailViewSet(viewsets.ModelViewSet):
     def by_token(self, request):
         token = request.query_params.get('token')
         mid = request.query_params.get('message_id')
+        scoped_qs = self.get_queryset()
         oe = None
         if token:
-            oe = OutreachEmail.objects.filter(tracking_token=token).first()
+            oe = scoped_qs.filter(tracking_token=token).first()
         elif mid:
             clean_mid = mid.strip().strip('<>').strip()
             if clean_mid:
                 oe = (
-                    OutreachEmail.objects.filter(message_id__icontains=clean_mid).first() or
-                    OutreachEmail.objects.filter(thread_id__icontains=clean_mid).first() or
-                    OutreachEmail.objects.filter(references__icontains=clean_mid).first()
+                    scoped_qs.filter(message_id__icontains=clean_mid).first() or
+                    scoped_qs.filter(thread_id__icontains=clean_mid).first() or
+                    scoped_qs.filter(references__icontains=clean_mid).first()
                 )
         if not oe:
             return Response({
@@ -2347,9 +2348,11 @@ class EmailLinkClickTrackingView(View):
 
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def pre_dashboard_stats(request):
     user = request.user
-    if not user.is_authenticated or (not user.is_superuser and getattr(user, 'profile', None) and user.profile.role != 'PRE'):
+    role = getattr(getattr(user, 'profile', None), 'role', None)
+    if not user.is_authenticated or (not user.is_superuser and role != 'PRE'):
         return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
         
     import calendar
@@ -2948,7 +2951,7 @@ class PreTaskViewSet(viewsets.ModelViewSet):
     and confirmed WhatsApp escalations.
     """
     serializer_class = PreTaskSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsLQOrManager]
     http_method_names = ['get', 'patch', 'post', 'head', 'options']
 
     def get_queryset(self):
@@ -2964,9 +2967,17 @@ class PreTaskViewSet(viewsets.ModelViewSet):
             'completed_by',
         ).all()
 
-        role = getattr(getattr(user, 'profile', None), 'role', None)
-        if not user.is_superuser and role == 'PRE':
+        profile = getattr(user, 'profile', None)
+        role = getattr(profile, 'role', None)
+        if user.is_superuser:
+            pass
+        elif role in ('PRE', 'LQ'):
             qs = qs.filter(assigned_pre=user)
+        elif role == 'MANAGER':
+            if profile and profile.company_id:
+                qs = qs.filter(assigned_pre__profile__company_id=profile.company_id)
+        else:
+            return PreTask.objects.none()
 
         status_param = (self.request.query_params.get('status') or '').strip().upper()
         if status_param in (PreTask.Status.PENDING, PreTask.Status.COMPLETED):

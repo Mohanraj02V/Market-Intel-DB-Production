@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { designApi, errorMessage } from '../../services/designApi';
+import { escapeHtml as esc, sanitizeHtml, sanitizeUrl } from '../../utils/htmlSanitizer';
 
 // High-compatibility public CDN social icon URLs (lightweight, ~2KB each, supported across all email clients including Outlook)
 export const SOCIAL_PLATFORMS = [
@@ -19,17 +20,7 @@ export const SOCIAL_PLATFORMS = [
   { id: 'github', name: 'GitHub', icon: 'https://cdn-icons-png.flaticon.com/512/733/733553.png', placeholder: 'https://github.com/...' },
 ];
 
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
-  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-}[c]));
-
-const safeUrl = (u) => {
-  const s = String(u || '').trim();
-  if (/^(https?:\/\/|mailto:|tel:)/i.test(s) || /\{\{[a-zA-Z0-9_]+\}\}/i.test(s)) {
-    return esc(s);
-  }
-  return '';
-};
+const safeUrl = (u) => sanitizeUrl(u, { allowDataImage: true });
 
 /**
  * Builds clean, table-based email signature HTML

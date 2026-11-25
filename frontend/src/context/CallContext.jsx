@@ -338,11 +338,19 @@ export const CallProvider = ({ children }) => {
   }, [callState.active, callState.callId, callState.status, cleanupCallSession, dispatch]);
 
   useEffect(() => {
-    // Only poll when logged in; polling while logged out causes 401/refresh/429 loops.
-    if (!authUser) return undefined;
+    // Only poll for authenticated roles with WhatsApp access (skip MANAGER / DM)
+    const canUseWhatsApp = Boolean(
+      authUser && (authUser.is_superuser || authUser.role === 'PRE' || authUser.role === 'LQ')
+    );
+    if (!canUseWhatsApp) return undefined;
     checkCallingStatus();
     const pollMs = (callState.active || Boolean(incomingCall)) ? 2000 : 5000;
-    const interval = setInterval(checkCallingStatus, pollMs);
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden && !callState.active && !incomingCall) {
+        return;
+      }
+      checkCallingStatus();
+    }, pollMs);
     const onVisibility = () => {
       if (!document.hidden) {
         checkCallingStatus();

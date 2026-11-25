@@ -46,7 +46,12 @@ const loadState = () => {
     if (serializedState === null) {
       return undefined;
     }
-    return JSON.parse(serializedState);
+    const parsed = JSON.parse(serializedState);
+    // Never restore auth tokens from sessionStorage (tokens live in memory + HttpOnly cookies)
+    if (parsed && typeof parsed === 'object') {
+      delete parsed.auth;
+    }
+    return parsed;
   } catch (err) {
     return undefined;
   }
@@ -54,8 +59,13 @@ const loadState = () => {
 
 const saveState = (state) => {
   try {
-    const serializedState = JSON.stringify(state);
-    sessionStorage.setItem('reduxState', serializedState);
+    if (!state?.auth?.isAuthenticated) {
+      sessionStorage.removeItem('reduxState');
+      return;
+    }
+    // Exclude auth slice so JWT accessToken and sensitive user session state are never written to sessionStorage
+    const { auth: _auth, ...safeState } = state;
+    sessionStorage.setItem('reduxState', JSON.stringify(safeState));
   } catch (err) {
     // Ignore write errors
   }
@@ -66,6 +76,10 @@ export const store = configureStore({
   preloadedState: loadState(),
 });
 
+let saveTimer = null;
 store.subscribe(() => {
-  saveState(store.getState());
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveState(store.getState());
+  }, 250);
 });

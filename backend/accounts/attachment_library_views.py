@@ -88,7 +88,10 @@ class EmailAttachmentLibraryViewSet(viewsets.ModelViewSet):
                 item.file.open('rb'),
                 content_type=item.content_type or 'application/octet-stream'
             )
-            response['Content-Disposition'] = f'attachment; filename="{item.name}"'
+            import re as _re
+            safe_name = _re.sub(r'[\r\n"\\/]+', '_', (item.name or 'attachment')).strip()[:180] or 'attachment'
+            response['Content-Disposition'] = f'attachment; filename="{safe_name}"'
+            response['X-Content-Type-Options'] = 'nosniff'
             return response
         except (FileNotFoundError, ValueError):
             raise Http404("File not found on server")

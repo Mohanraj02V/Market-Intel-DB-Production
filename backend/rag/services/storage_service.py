@@ -28,6 +28,9 @@ def _s3_client():
     import boto3
 
     kwargs = {"region_name": conf.aws_region()}
+    endpoint_url = (os.getenv("RAG_S3_ENDPOINT_URL") or os.getenv("AWS_S3_ENDPOINT_URL") or "").strip()
+    if endpoint_url:
+        kwargs["endpoint_url"] = endpoint_url
     profile = conf.aws_profile()
     session = boto3.Session(profile_name=profile) if profile else boto3.Session()
     return session.client("s3", **kwargs)

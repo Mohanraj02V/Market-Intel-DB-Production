@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Mail, Calendar as CalendarIcon, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api from '../services/api';
+import { sanitizeReturnUrl } from '../utils/htmlSanitizer';
 
 const GmailCallbackPage = () => {
   const [searchParams] = useSearchParams();
@@ -17,7 +18,8 @@ const GmailCallbackPage = () => {
     const code = searchParams.get('code');
     const state = searchParams.get('state');
 
-    const calendarReturnUrl = localStorage.getItem('calendar_oauth_return_url');
+    const rawCalReturn = localStorage.getItem('calendar_oauth_return_url');
+    const calendarReturnUrl = rawCalReturn ? sanitizeReturnUrl(rawCalReturn, '/calendar') : null;
 
     if (error) {
       if (calendarReturnUrl) {

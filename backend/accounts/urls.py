@@ -4,7 +4,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework import status
 from .views import (
     UserMeView,
@@ -12,6 +12,8 @@ from .views import (
     MailAccountViewSet,
     CookieTokenObtainPairView,
     CookieTokenRefreshView,
+    CsrfTokenView,
+    clear_jwt_cookies,
     GoogleOAuthURLView,
     GoogleOAuthLoginView,
     GoogleOAuthCallbackView,
@@ -61,17 +63,23 @@ class LogoutView(APIView):
     """
     Server-side logout endpoint.
 
-    Accepts the refresh token and blacklists it so it cannot be
-    used to generate new access tokens. The client should also
-    clear its local token storage on logout.
+    Accepts the refresh token (body or HttpOnly cookie) and blacklists it even if
+    the short-lived access token has already expired. Enforces CSRF when a
+    cookie-based refresh token is used.
 
     POST /api/auth/logout/
-    Body: { "refresh": "<refresh_token>" }
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def post(self, request):
-        refresh_token = request.data.get("refresh") or request.COOKIES.get("refresh_token")
+        body_refresh = request.data.get("refresh") if hasattr(request.data, 'get') else None
+        cookie_refresh = request.COOKIES.get("refresh_token")
+        refresh_token = body_refresh or cookie_refresh
+
+        if cookie_refresh and not body_refresh:
+            from .authentication import CookieJWTAuthentication
+            CookieJWTAuthentication().enforce_csrf(request)
+
         if refresh_token:
             try:
                 token = RefreshToken(refresh_token)
@@ -80,25 +88,26 @@ class LogoutView(APIView):
                 import logging
                 logging.getLogger(__name__).warning("Logout token blacklist error: %s", exc)
 
-        try:
-            from whatsapp.models import WhatsAppAuditLog
-            from whatsapp.services import _write_audit_log
-            _write_audit_log(
-                action=WhatsAppAuditLog.Action.AUTH_LOGOUT,
-                performed_by=request.user,
-                success=True,
-                result_detail="User logged out via /auth/logout/",
-            )
-        except Exception:
-            pass
+        if request.user and request.user.is_authenticated:
+            try:
+                from whatsapp.models import WhatsAppAuditLog
+                from whatsapp.services import _write_audit_log
+                _write_audit_log(
+                    action=WhatsAppAuditLog.Action.AUTH_LOGOUT,
+                    performed_by=request.user,
+                    success=True,
+                    result_detail="User logged out via /auth/logout/",
+                )
+            except Exception:
+                pass
 
         response = Response({"detail": "Logged out successfully."}, status=status.HTTP_200_OK)
-        response.delete_cookie('access_token')
-        response.delete_cookie('refresh_token')
+        clear_jwt_cookies(response)
         return response
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('csrf/', CsrfTokenView.as_view(), name='auth_csrf'),
     path('login/', CookieTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('refresh/', CookieTokenRefreshView.as_view(), name='token_refresh'),
     path('me/', UserMeView.as_view(), name='user_me'),

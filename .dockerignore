@@ -6,8 +6,8 @@
 .env.*
 backend/.env
 frontend/.env
-backend/**/.env
-frontend/**/.env
+**/.env
+**/.env.*
 
 **/__pycache__
 **/*.py[cod]
@@ -16,34 +16,51 @@ frontend/**/.env
 .venv
 venv
 env
+**/.venv
+**/venv
+**/env
 
 node_modules
-frontend/node_modules
+**/node_modules
 frontend/dist
 frontend/build
 
 backend/media
 backend/attachments
 backend/staticfiles
+backend/settings_*test*.py
+backend/settings_local*.py
+backend/cleanup_whatsapp_data.py
 
+docs
+examples
+*.bak
+*.backup
 *.sqlite3
 *.db
-
 *.log
 logs
 
 .pytest_cache
+**/.pytest_cache
 .mypy_cache
 .coverage
 htmlcov
 
 .vscode
 .idea
+.agents
+.gemini
+.antigravity
+.claude
+.cursor
 
 .DS_Store
 Thumbs.db
 
 *.pem
 *.key
+*.crt
+*.pfx
 
 docker-compose.override.yml

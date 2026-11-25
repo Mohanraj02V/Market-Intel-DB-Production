@@ -54,6 +54,13 @@ def generate_personalized_email_view(request):
       - current_subject: str (optional)
       - current_body: str (optional)
     """
+    role = getattr(getattr(request.user, "profile", None), "role", None)
+    if not request.user.is_superuser and role not in ("PRE", "LQ", "MANAGER"):
+        return Response(
+            {"detail": "You do not have permission to generate outreach emails."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     data = request.data or {}
     user_prompt = str(data.get("prompt") or "").strip()
     if not user_prompt:
@@ -61,6 +68,15 @@ def generate_personalized_email_view(request):
             {"detail": "Please enter a prompt describing the email you want to generate."},
             status=status.HTTP_400_BAD_REQUEST,
         )
+
+    prospect_id_val = str(data.get("prospect_id") or "").strip() or None
+    if prospect_id_val and not request.user.is_superuser and role in ("PRE", "LQ"):
+        from prospects.models import Prospect
+        if not Prospect.objects.filter(id=prospect_id_val, created_by=request.user.username).exists():
+            return Response(
+                {"detail": "Prospect not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
     raw_recipients = data.get("recipient_emails") or data.get("to_emails") or []
     if isinstance(raw_recipients, str):

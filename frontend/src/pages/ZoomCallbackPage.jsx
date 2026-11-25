@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Video, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api from '../services/api';
+import { sanitizeReturnUrl } from '../utils/htmlSanitizer';
 
 const ZoomCallbackPage = () => {
   const [searchParams] = useSearchParams();
@@ -17,7 +18,7 @@ const ZoomCallbackPage = () => {
     const code = searchParams.get('code');
     const state = searchParams.get('state');
 
-    const returnUrl = localStorage.getItem('zoom_oauth_return_url') || '/prospects?tab=outreach';
+    const returnUrl = sanitizeReturnUrl(localStorage.getItem('zoom_oauth_return_url'), '/prospects?tab=outreach');
 
     if (error) {
       toast.error(`Zoom authorization was cancelled or denied: ${error}`);

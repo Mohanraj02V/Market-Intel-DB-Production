@@ -13,6 +13,18 @@ class EmailVerificationViewSet(viewsets.ModelViewSet):
     serializer_class = EmailVerificationSerializer
     permission_classes = [IsPREOrLQ]
 
+    def get_queryset(self):
+        qs = super().get_queryset().select_related('prospect', 'prospect_contact')
+        user = self.request.user
+        if user.is_superuser:
+            return qs
+        role = getattr(getattr(user, 'profile', None), 'role', None)
+        if role in ('PRE', 'LQ'):
+            return qs.filter(prospect__created_by=user.username)
+        if role == 'MANAGER':
+            return qs
+        return qs.none()
+
     def get_permissions(self):
         user = getattr(self.request, 'user', None)
         is_manager = (
@@ -40,6 +52,8 @@ class EmailVerificationViewSet(viewsets.ModelViewSet):
         emails = request.data.get('emails', [])
         if not isinstance(emails, list):
             return Response({'error': 'emails must be a list.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(emails) > 100:
+            return Response({'error': 'Maximum 100 emails allowed per bulk verification request.'}, status=status.HTTP_400_BAD_REQUEST)
         
         results = []
         unique_emails = list(set(emails))
@@ -72,7 +86,12 @@ class EmailVerificationViewSet(viewsets.ModelViewSet):
             return Response({'error': 'prospect_id and email_address are required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            prospect = Prospect.objects.get(id=prospect_id)
+            prospect_qs = Prospect.objects.all()
+            if not request.user.is_superuser:
+                role = getattr(getattr(request.user, 'profile', None), 'role', None)
+                if role in ('PRE', 'LQ'):
+                    prospect_qs = prospect_qs.filter(created_by=request.user.username)
+            prospect = prospect_qs.get(id=prospect_id)
         except Prospect.DoesNotExist:
             return Response({'error': 'Prospect not found.'}, status=status.HTTP_404_NOT_FOUND)
 

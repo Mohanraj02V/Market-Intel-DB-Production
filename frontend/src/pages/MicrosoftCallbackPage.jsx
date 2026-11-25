@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Calendar as CalendarIcon, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api from '../services/api';
+import { sanitizeReturnUrl } from '../utils/htmlSanitizer';
 
 const MicrosoftCallbackPage = () => {
   const [searchParams] = useSearchParams();
@@ -18,7 +19,7 @@ const MicrosoftCallbackPage = () => {
     const code = searchParams.get('code');
     const state = searchParams.get('state');
 
-    const returnUrl = localStorage.getItem('microsoft_oauth_return_url') || '/prospects?tab=outreach';
+    const returnUrl = sanitizeReturnUrl(localStorage.getItem('microsoft_oauth_return_url'), '/prospects?tab=outreach');
 
     if (error) {
       toast.error(`Microsoft authorization was cancelled or denied: ${errorDescription || error}`);

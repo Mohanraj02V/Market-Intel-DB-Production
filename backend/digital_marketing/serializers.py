@@ -28,8 +28,11 @@ from .models import (
 class SocialAccountConnectionSerializer(serializers.ModelSerializer):
     """
     Exposes safe social account metadata to the frontend.
-    Strictly excludes access_token_encrypted and refresh_token_encrypted.
+    Strictly excludes access_token_encrypted, refresh_token_encrypted, and any
+    token/secret keys stored inside metadata.
     """
+    metadata = serializers.SerializerMethodField()
+
     class Meta:
         model = SocialAccountConnection
         fields = [
@@ -47,6 +50,13 @@ class SocialAccountConnectionSerializer(serializers.ModelSerializer):
             'updated_at',
         ]
         read_only_fields = fields
+
+    def get_metadata(self, obj):
+        raw = obj.metadata if isinstance(obj.metadata, dict) else {}
+        return {
+            k: v for k, v in raw.items()
+            if not any(secret_kw in str(k).lower() for secret_kw in ('token', 'secret', 'password', 'key'))
+        }
 
 
 class SocialPostSerializer(serializers.ModelSerializer):

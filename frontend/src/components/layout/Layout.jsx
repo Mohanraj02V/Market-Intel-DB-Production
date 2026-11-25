@@ -12,7 +12,7 @@ import {
   FileText, CheckSquare, Layers
 } from 'lucide-react';
 import { logout, loginSuccess } from '../../features/auth/authSlice';
-import api from '../../services/api';
+import api, { clearApiAuthHeader } from '../../services/api';
 import { store } from '../../app/store';
 import NotificationCenter from './NotificationCenter';
 import { InstagramIcon, FacebookIcon, TwitterXIcon } from '../common/SocialIcons';
@@ -56,26 +56,30 @@ const Layout = () => {
   };
 
   const handleLogout = async () => {
-    const currentRefreshToken = store?.getState?.()?.auth?.refreshToken;
-    if (currentRefreshToken) {
-      try {
-        await api.post('/auth/logout/', { refresh: currentRefreshToken });
-      } catch (e) {
-        console.warn('Server logout failed; proceeding with client logout.', e);
-      }
+    try {
+      await api.post('/auth/logout/', {});
+    } catch (e) {
+      console.warn('Server logout failed; proceeding with client logout.', e);
     }
+    clearApiAuthHeader();
     dispatch(logout());
     navigate('/login');
   };
 
-  // Idle Session Timeout (30 minutes)
+  // Idle Session Timeout (30 minutes, throttled activity resets)
   const idleTimeoutRef = useRef(null);
+  const lastActivityResetRef = useRef(0);
   const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
   useEffect(() => {
     if (!user) return;
 
     const resetIdleTimeout = () => {
+      const now = Date.now();
+      if (now - lastActivityResetRef.current < 5000 && idleTimeoutRef.current) {
+        return;
+      }
+      lastActivityResetRef.current = now;
       if (idleTimeoutRef.current) {
         clearTimeout(idleTimeoutRef.current);
       }
@@ -240,23 +244,27 @@ const Layout = () => {
               </button>
             </div>
 
-            {/* Search Bar matching Image 1 with Mic icon */}
+            {/* Sidebar Search */}
             <div className="px-1 mb-2 shrink-0">
               <div className="relative flex items-center bg-[#f4f5f6] hover:bg-[#eceef0] focus-within:bg-white focus-within:ring-2 focus-within:ring-slate-200 border border-transparent focus-within:border-slate-300 rounded-xl px-3 py-2 transition-all">
                 <Search className="w-4 h-4 text-slate-400 mr-2 shrink-0 pointer-events-none" />
                 <input
                   type="text"
-                  placeholder="Search"
+                  aria-label="Search navigation"
+                  placeholder="Search navigation"
                   value={sidebarSearch}
                   onChange={(e) => setSidebarSearch(e.target.value)}
                   className="bg-transparent text-xs text-slate-800 placeholder-slate-400 outline-none w-full font-medium"
                 />
-                {sidebarSearch ? (
-                  <button type="button" onClick={() => setSidebarSearch('')} className="p-0.5 text-slate-400 hover:text-slate-600">
+                {sidebarSearch && (
+                  <button
+                    type="button"
+                    aria-label="Clear navigation search"
+                    onClick={() => setSidebarSearch('')}
+                    className="p-0.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
                     <X className="w-3.5 h-3.5" />
                   </button>
-                ) : (
-                  <Mic className="w-4 h-4 text-slate-400 ml-1 shrink-0 hover:text-slate-700 cursor-pointer transition-colors" />
                 )}
               </div>
             </div>
@@ -319,11 +327,12 @@ const Layout = () => {
                 );
               })}
 
-              {/* Collapsible Apps Section matching Image 1 */}
-              {!sidebarSearch && user?.role !== 'MANAGER' && (
+              {/* Collapsible Quick Apps Section (PRE / LQ only) */}
+              {!sidebarSearch && user?.role !== 'MANAGER' && user?.role !== 'DM' && (
                 <div className="pt-1">
                   <button
                     type="button"
+                    aria-expanded={isAppsSectionOpen}
                     onClick={() => setIsAppsSectionOpen((prev) => !prev)}
                     className="flex items-center justify-between w-full px-2 py-1.5 text-xs text-slate-500 hover:text-slate-800 rounded-lg hover:bg-slate-50 cursor-pointer font-medium transition"
                   >
@@ -333,11 +342,7 @@ const Layout = () => {
                       ) : (
                         <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
                       )}
-                      <span className="font-semibold text-slate-600">Apps</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-slate-400" onClick={(e) => e.stopPropagation()}>
-                      <Plus className="w-3.5 h-3.5 hover:text-slate-700 cursor-pointer" />
-                      <MoreVertical className="w-3.5 h-3.5 hover:text-slate-700 cursor-pointer" />
+                      <span className="font-semibold text-slate-600">Quick Apps</span>
                     </div>
                   </button>
 

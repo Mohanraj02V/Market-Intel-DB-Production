@@ -69,17 +69,27 @@ class _OwnedDesignViewSet(viewsets.ModelViewSet):
         if uploaded_file.size > 5 * 1024 * 1024:
             return Response({'error': 'Image file is too large (max 5 MB).'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Validate content type
-        content_type = getattr(uploaded_file, 'content_type', '') or ''
-        allowed_types = {'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'}
-        if content_type.lower() not in allowed_types:
-            return Response({'error': 'Unsupported file type. Only JPEG, PNG, GIF, and WebP images are allowed.'}, status=status.HTTP_400_BAD_REQUEST)
+        # Validate content type (strictly block SVG/HTML to prevent stored XSS)
+        content_type = (getattr(uploaded_file, 'content_type', '') or '').lower()
+        allowed_types_to_ext = {
+            'image/jpeg': '.jpg',
+            'image/png': '.png',
+            'image/gif': '.gif',
+            'image/webp': '.webp',
+        }
+        if content_type not in allowed_types_to_ext:
+            return Response(
+                {'error': 'Unsupported file type. Only JPEG, PNG, GIF, and WebP images are allowed.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         import os, uuid
         from django.conf import settings
         from django.core.files.storage import default_storage
 
-        ext = os.path.splitext(uploaded_file.name)[1].lower() or '.png'
+        raw_ext = os.path.splitext(uploaded_file.name or '')[1].lower()
+        allowed_exts = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
+        ext = raw_ext if raw_ext in allowed_exts else allowed_types_to_ext[content_type]
         filename = f"template_images/{uuid.uuid4().hex}{ext}"
         saved_name = default_storage.save(filename, uploaded_file)
         url = default_storage.url(saved_name)

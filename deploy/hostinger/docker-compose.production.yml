@@ -1,0 +1,101 @@
+# =============================================================================
+# Hostinger VPS KVM 2 Production Compose (2 vCPU / 8 GB RAM / 100 GB NVMe)
+# Services: Django API + Email Campaign Worker + RAG Ingestion Worker
+# All internal ports are bound to loopback or private Docker network only.
+# =============================================================================
+
+services:
+  api:
+    image: ${API_IMAGE:?API_IMAGE must be set to an immutable commit-SHA image tag}
+    container_name: marketintel-api
+    restart: unless-stopped
+    env_file:
+      - /opt/marketintel/.env
+    ports:
+      - "127.0.0.1:8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - /opt/marketintel/staticfiles:/app/staticfiles
+      - /opt/marketintel/media:/app/media
+    init: true
+    stop_grace_period: 30s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    cpus: "1.2"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-H", "X-Forwarded-Proto: https", "http://127.0.0.1:8000/api/health/"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    networks:
+      - marketintel_internal
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  campaign-worker:
+    image: ${API_IMAGE:?API_IMAGE must be set to an immutable commit-SHA image tag}
+    container_name: marketintel-campaign-worker
+    restart: unless-stopped
+    command: ["python", "manage.py", "process_campaign_queue", "--poll-interval", "5"]
+    env_file:
+      - /opt/marketintel/.env
+    volumes:
+      - /opt/marketintel/media:/app/media
+    init: true
+    stop_grace_period: 30s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 768m
+    cpus: "0.4"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - marketintel_internal
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  rag-worker:
+    image: ${API_IMAGE:?API_IMAGE must be set to an immutable commit-SHA image tag}
+    container_name: marketintel-rag-worker
+    restart: unless-stopped
+    command: ["python", "manage.py", "run_rag_worker", "--poll-interval", "3"]
+    env_file:
+      - /opt/marketintel/.env
+    volumes:
+      - /opt/marketintel/media:/app/media
+    init: true
+    stop_grace_period: 30s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    cpus: "0.4"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - marketintel_internal
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  marketintel_internal:
+    driver: bridge

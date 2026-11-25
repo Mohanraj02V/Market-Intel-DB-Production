@@ -201,6 +201,13 @@ def verify_cbe_hmac_headers(
     provided_hex = sig_hdr[3:].lower() if sig_hdr.lower().startswith("v1=") else sig_hdr.lower()
     if not hmac.compare_digest(provided_hex, expected_hex):
         return False, "X-CBE-Signature verification failed."
+    # Prevent nonce replay within the allowed clock skew window
+    try:
+        from django.core.cache import cache
+        if not cache.add(f"cbe-webhook-nonce:{nonce}", 1, max(60, int(max_skew_seconds))):
+            return False, "X-CBE-Nonce replay detected."
+    except Exception:
+        pass
     return True, "ok"
 
 
