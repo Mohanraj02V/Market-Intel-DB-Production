@@ -89,23 +89,42 @@ Never commit real secrets. Populate `/opt/marketintel/.env` on the VPS with:
 
 ---
 
-## 4. Keyless OIDC Deployment (HashiCorp Vault + Short-Lived SSH Certs)
+## 4. GitHub Actions CI/CD Setup (`deploy-hostinger.yml`)
 
-GitHub Actions uses **zero permanent SSH private keys**:
-1. Provision an independently hosted **HashiCorp Vault** instance (never host the SSH CA on the same VPS it protects).
-2. Run [setup_vault_oidc.sh](../deploy/hostinger/vault/setup_vault_oidc.sh) on Vault to configure:
-   - `ssh-client-signer` CA with 5-minute TTL restricted strictly to principal `deploy` (no port/agent/X11 forwarding).
-   - `auth/jwt` trusting `https://token.actions.githubusercontent.com` bound to your exact repository, owner, branch, and protected environment `marketintel-production`.
-3. Install Vault's exported SSH CA public key on the Hostinger VPS at `/etc/ssh/vault_user_ca.pub` and run `sudo systemctl reload ssh`.
-4. Configure these GitHub **Environment Variables** under `marketintel-production`:
-   - `VAULT_ADDR` (e.g. `https://vault.yourdomain.com`)
-   - `VAULT_JWT_ROLE` (`marketintel-production-deploy`)
-   - `VAULT_SSH_ROLE` (`marketintel-deploy`)
-   - `VAULT_AUDIENCE` (`https://vault.marketintel`)
-   - `HOSTINGER_VPS_HOST` (Hostinger VPS IP or hostname)
-   - `HOSTINGER_VPS_PORT` (`22`)
-   - `HOSTINGER_VPS_KNOWN_HOSTS` (output of `ssh-keyscan -H <VPS_HOST>`)
-   - `VITE_API_BASE_URL` (`https://marketintel.hikasimat.com/api`)
+The workflow [`.github/workflows/deploy-hostinger.yml`](../.github/workflows/deploy-hostinger.yml) runs automatically on pull requests to `main` (tests + security scans only) and deploys automatically on pushes to `main` (or manual `workflow_dispatch` on `main`).
+
+### 4.1 Generate a Dedicated `deploy` SSH Key on Hostinger VPS
+1. Generate a dedicated `ed25519` keypair strictly for GitHub Actions (never use a root key):
+   ```bash
+   ssh-keygen -t ed25519 -N "" -C "github-actions-marketintel-deploy" -f /tmp/gha_deploy_key
+   sudo install -d -m 700 -o deploy -g deploy /home/deploy/.ssh
+   sudo tee -a /home/deploy/.ssh/authorized_keys < /tmp/gha_deploy_key.pub >/dev/null
+   sudo chown deploy:deploy /home/deploy/.ssh/authorized_keys
+   sudo chmod 600 /home/deploy/.ssh/authorized_keys
+   cat /tmp/gha_deploy_key          # Copy into GitHub Environment Secret HOSTINGER_SSH_PRIVATE_KEY
+   rm -f /tmp/gha_deploy_key /tmp/gha_deploy_key.pub
+   ```
+2. Export the server's SSH host fingerprint for strict host-key checking:
+   ```bash
+   ssh-keyscan -p 22 -H <YOUR_HOSTINGER_VPS_IP>
+   ```
+
+### 4.2 Configure GitHub Environment (`marketintel-production`)
+In GitHub → **Settings → Environments → New environment → `marketintel-production`** (add optional required reviewers for approval before production deploys):
+
+**Environment Secret:**
+- `HOSTINGER_SSH_PRIVATE_KEY` — full private key from `/tmp/gha_deploy_key`
+
+**Environment Variables:**
+- `HOSTINGER_VPS_HOST` — Hostinger VPS IPv4 or hostname
+- `HOSTINGER_VPS_PORT` — `22` (or custom SSH port)
+- `HOSTINGER_VPS_USER` — `deploy`
+- `HOSTINGER_VPS_KNOWN_HOSTS` — exact output of `ssh-keyscan -H <VPS_HOST>`
+- `VITE_API_BASE_URL` — `https://marketintel.hikasimat.com/api`
+- `API_HEALTH_URL` — `https://marketintel.hikasimat.com/api/health/`
+- `FRONTEND_URL` — `https://marketinteldbapp.hikasimat.com/`
+
+*(Optional enterprise upgrade: [`deploy/hostinger/vault/setup_vault_oidc.sh`](../deploy/hostinger/vault/setup_vault_oidc.sh) is retained if you later adopt HashiCorp Vault short-lived OIDC SSH certificates.)*
 
 ---
 
