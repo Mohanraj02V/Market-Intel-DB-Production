@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     'rag',
     'email_ai',
     'digital_marketing',
+    'transcriptions',
     'drf_spectacular',
 ]
 
@@ -328,6 +329,7 @@ ZOOM_CLIENT_SECRET = os.getenv('ZOOM_CLIENT_SECRET', '').strip()
 ZOOM_OAUTH_REDIRECT_URI = os.getenv(
     'ZOOM_OAUTH_REDIRECT_URI', 'http://localhost:5173/auth/zoom/callback'
 ).strip()
+ZOOM_WEBHOOK_SECRET_TOKEN = os.getenv('ZOOM_WEBHOOK_SECRET_TOKEN', '').strip()
 
 # ── Microsoft 365 / Teams / Outlook Calendar Integration ──────────────────────
 MICROSOFT_CLIENT_ID = os.getenv('MICROSOFT_CLIENT_ID', '').strip()

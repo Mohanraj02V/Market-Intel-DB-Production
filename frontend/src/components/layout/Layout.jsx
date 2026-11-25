@@ -118,6 +118,7 @@ const Layout = () => {
         ]
       },
       { path: '/calendar', label: 'Calendar', icon: Calendar },
+      { path: '/transcriptions', label: 'Transcription', icon: FileText },
       { 
         path: '/inbox', 
         label: 'Email', 
@@ -149,6 +150,7 @@ const Layout = () => {
         ]
       },
       { path: '/calendar', label: 'Calendar', icon: Calendar },
+      { path: '/transcriptions', label: 'Transcription', icon: FileText },
       { 
         path: '/inbox', 
         label: 'Email', 

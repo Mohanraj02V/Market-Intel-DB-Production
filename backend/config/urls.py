@@ -24,6 +24,7 @@ urlpatterns = [
     path('api/whatsapp/', include('whatsapp.urls')),
     path('api/rag/', include('rag.urls')),
     path('api/digital-marketing/', include('digital_marketing.urls')),
+    path('api/transcriptions/', include('transcriptions.urls')),
 
     # Frontend Route Redirection (if OAuth providers callback to backend domain)
     path('digital-marketing/<path:route_path>', redirect_to_frontend),

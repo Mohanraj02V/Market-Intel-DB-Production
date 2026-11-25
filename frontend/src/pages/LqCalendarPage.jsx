@@ -21,7 +21,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useSelector } from "react-redux";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { toast } from "react-toastify";
 import api from "../services/api";
 import { getZonedDate, formatTimeForUser, formatDateTimeForUser } from "../utils/timezone";
@@ -110,17 +110,25 @@ export default function LqCalendarPage() {
   // Add Schedule modal & draft slot state
   const [isAddScheduleOpen, setIsAddScheduleOpen] = useState(false);
   const [draftSlot, setDraftSlot] = useState(null);
+  const [providersStatus, setProvidersStatus] = useState({
+    google_meet: { is_connected: false, is_configured: true, email: "" },
+    zoom: { is_connected: false, is_configured: true, email: "", has_recording_scope: false },
+  });
   const [scheduleForm, setScheduleForm] = useState({
     title: "",
     date: "",
     startTime: "09:30",
     endTime: "10:00",
     guest: "",
-    meetUrl: "https://meet.google.com/dcm-qwer-zxc",
+    meetingProvider: "GOOGLE_MEET",
+    meetUrl: "",
     description: "",
     colorId: "skyblue",
+    clientRequestId: "",
   });
   const [savingSchedule, setSavingSchedule] = useState(false);
+  const [scheduleError, setScheduleError] = useState("");
+  const [createdEventResult, setCreatedEventResult] = useState(null);
 
   const scrollRef = useRef(null);
 
@@ -174,11 +182,19 @@ export default function LqCalendarPage() {
       let isConnected = false;
       let email = "";
       try {
-        const statusRes = await api.get("/auth/google/calendar/status/");
-        const statusData = statusRes.data || {};
-        setCalendarStatus(statusData);
-        isConnected = Boolean(statusData.is_connected);
-        email = statusData.email || "";
+        const [statusRes, providersRes] = await Promise.allSettled([
+          api.get("/auth/google/calendar/status/"),
+          api.get("/auth/meeting-providers/status/"),
+        ]);
+        if (statusRes.status === "fulfilled") {
+          const statusData = statusRes.value.data || {};
+          setCalendarStatus(statusData);
+          isConnected = Boolean(statusData.is_connected);
+          email = statusData.email || "";
+        }
+        if (providersRes.status === "fulfilled" && providersRes.value.data) {
+          setProvidersStatus(providersRes.value.data);
+        }
       } catch (err) {
         console.warn("Could not fetch calendar status", err);
       }
@@ -280,11 +296,26 @@ export default function LqCalendarPage() {
     }
   };
 
-  const copyToClipboard = async (text) => {
+  const handleConnectZoom = async () => {
+    try {
+      const res = await api.get("/auth/zoom/url/");
+      const authUrl = res.data?.url || res.data?.authorization_url;
+      if (authUrl) {
+        localStorage.setItem("zoom_oauth_return_url", "/calendar");
+        window.location.href = authUrl;
+      } else {
+        toast.error("Could not obtain Zoom authorization URL.");
+      }
+    } catch (e) {
+      toast.error(e.response?.data?.error || "Could not initiate Zoom connection.");
+    }
+  };
+
+  const copyToClipboard = async (text, label = "Meeting link") => {
     try {
       await navigator.clipboard.writeText(text);
       setCopiedLink(true);
-      toast.success("Meet link copied to clipboard!");
+      toast.success(`${label} copied to clipboard!`);
       setTimeout(() => setCopiedLink(false), 2000);
     } catch {
       toast.error("Could not copy link.");
@@ -445,16 +476,25 @@ export default function LqCalendarPage() {
       colorId: "skyblue",
     };
 
+    const newReqId =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
     setDraftSlot(draft);
+    setScheduleError("");
+    setCreatedEventResult(null);
     setScheduleForm({
       title: "",
       date: dateStr,
       startTime: startTimeStr,
       endTime: endTimeStr,
       guest: "",
-      meetUrl: `https://meet.google.com/${Math.random().toString(36).substring(2, 5)}-${Math.random().toString(36).substring(2, 6)}-${Math.random().toString(36).substring(2, 5)}`,
+      meetingProvider: "GOOGLE_MEET",
+      meetUrl: "",
       description: "",
       colorId: "skyblue",
+      clientRequestId: newReqId,
     });
     setIsAddScheduleOpen(true);
   };
@@ -462,58 +502,101 @@ export default function LqCalendarPage() {
   const handleCloseAddSchedule = () => {
     setIsAddScheduleOpen(false);
     setDraftSlot(null);
+    setScheduleError("");
+    setCreatedEventResult(null);
   };
 
-  // Save new schedule to Google Calendar in real-time
+  // Save new schedule to Google Calendar (and Zoom when selected) in real-time
   const handleSaveSchedule = async (e) => {
     if (e) e.preventDefault();
+    setScheduleError("");
+
+    if (!calendarStatus.is_connected) {
+      const msg = "Please connect Google Calendar before creating a schedule.";
+      setScheduleError(msg);
+      toast.error(msg);
+      return;
+    }
+
+    if (scheduleForm.meetingProvider === "ZOOM" && !providersStatus?.zoom?.is_connected) {
+      const msg = "Please connect your Zoom account first to generate a Zoom meeting link.";
+      setScheduleError(msg);
+      toast.error(msg);
+      return;
+    }
+
+    const title = scheduleForm.title.trim() || "(no title)";
+    const [sH, sM] = scheduleForm.startTime.split(":").map(Number);
+    const [eH, eM] = scheduleForm.endTime.split(":").map(Number);
+    const [year, month, day] = scheduleForm.date.split("-").map(Number);
+    const startObj = new Date(year, month - 1, day, sH, sM, 0);
+    const endObj = new Date(year, month - 1, day, eH, eM, 0);
+
+    if (Number.isNaN(startObj.getTime()) || Number.isNaN(endObj.getTime()) || endObj <= startObj) {
+      const msg = "End time must be after start time.";
+      setScheduleError(msg);
+      toast.error(msg);
+      return;
+    }
+
     setSavingSchedule(true);
     try {
-      const title = scheduleForm.title.trim() || "(no title)";
-      const [sH, sM] = scheduleForm.startTime.split(":").map(Number);
-      const [eH, eM] = scheduleForm.endTime.split(":").map(Number);
-
-      const [year, month, day] = scheduleForm.date.split("-").map(Number);
-      const startObj = new Date(year, month - 1, day, sH, sM, 0);
-      const endObj = new Date(year, month - 1, day, eH, eM, 0);
-
-      const newEvt = {
-        id: `evt_${Date.now()}`,
+      const payload = {
         summary: title,
         description: scheduleForm.description,
         start: startObj.toISOString(),
         end: endObj.toISOString(),
-        meet_url: scheduleForm.meetUrl,
-        colorId: scheduleForm.colorId,
-        attendees: scheduleForm.guest ? [{ email: scheduleForm.guest }] : [],
+        meeting_provider: scheduleForm.meetingProvider,
+        timezone: user?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+        color_id: scheduleForm.colorId,
+        attendees: scheduleForm.guest ? [scheduleForm.guest.trim()] : [],
+        client_request_id: scheduleForm.clientRequestId,
       };
-
-      if (calendarStatus.is_connected) {
-        try {
-          const res = await api.post("/auth/google/calendar/events/", {
-            summary: newEvt.summary,
-            description: newEvt.description,
-            start: newEvt.start,
-            end: newEvt.end,
-            meet_url: newEvt.meet_url,
-            color_id: newEvt.colorId,
-            attendees: scheduleForm.guest ? [scheduleForm.guest] : [],
-          });
-          if (res.data?.event?.id) {
-            newEvt.id = res.data.event.id;
-          }
-        } catch (apiErr) {
-          console.warn("Backend sync failed, saved locally", apiErr);
-        }
+      if (scheduleForm.meetingProvider === "NONE" && scheduleForm.meetUrl.trim()) {
+        payload.meet_url = scheduleForm.meetUrl.trim();
       }
 
-      setEvents((prev) => [newEvt, ...prev.filter((item) => item.id !== newEvt.id)]);
-      toast.success("Schedule created successfully!");
-      handleCloseAddSchedule();
+      const res = await api.post("/auth/google/calendar/events/", payload);
+      const created = res.data?.event;
+      if (!created?.id) {
+        throw new Error("Calendar server did not return a created event.");
+      }
+
+      const realEvt = {
+        ...created,
+        meet_url: created.meet_url || created.meeting_url || "",
+        colorId: created.color_id || scheduleForm.colorId,
+      };
+
+      setEvents((prev) => [realEvt, ...prev.filter((item) => item.id !== realEvt.id)]);
+      setDraftSlot(null);
+
+      if (realEvt.auto_recording_warning) {
+        toast.warning(realEvt.auto_recording_warning);
+      }
+
+      if (scheduleForm.meetingProvider === "GOOGLE_MEET" || scheduleForm.meetingProvider === "ZOOM") {
+        setCreatedEventResult(realEvt);
+        toast.success(
+          scheduleForm.meetingProvider === "ZOOM"
+            ? "Zoom meeting created and synced to Google Calendar!"
+            : "Google Meet scheduled and synced to Google Calendar!"
+        );
+      } else {
+        toast.success("Schedule created in Google Calendar!");
+        handleCloseAddSchedule();
+      }
+
       // Re-sync with Google Calendar
       setTimeout(() => fetchStatusAndEvents(false), 1000);
     } catch (err) {
-      toast.error("Failed to create schedule.");
+      const msg =
+        err?.response?.data?.error ||
+        err?.response?.data?.detail ||
+        err?.message ||
+        "Failed to create schedule.";
+      setScheduleError(msg);
+      toast.error(msg);
     } finally {
       setSavingSchedule(false);
     }
@@ -1172,10 +1255,12 @@ export default function LqCalendarPage() {
         {/* "ADD SCHEDULE" FLOATING MODAL */}
         {/* ========================================================= */}
         {isAddScheduleOpen && (
-          <div className="fixed sm:absolute bottom-6 right-6 z-50 w-[350px] bg-white rounded-3xl shadow-2xl border border-slate-200/90 p-5 space-y-3.5 animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <div className="fixed sm:absolute bottom-6 right-6 z-50 w-[370px] max-w-[calc(100vw-2rem)] bg-white rounded-3xl shadow-2xl border border-slate-200/90 p-5 space-y-3.5 animate-in fade-in slide-in-from-bottom-3 duration-200">
             {/* Header: Add Schedule + Close */}
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900">Add Schedule</h3>
+              <h3 className="text-sm font-bold text-slate-900">
+                {createdEventResult ? "Meeting Scheduled" : "Add Schedule"}
+              </h3>
               <button
                 type="button"
                 onClick={handleCloseAddSchedule}
@@ -1185,120 +1270,258 @@ export default function LqCalendarPage() {
               </button>
             </div>
 
-            {/* Input: New event title */}
-            <div>
-              <input
-                type="text"
-                autoFocus
-                placeholder="New event title"
-                value={scheduleForm.title}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, title: e.target.value })}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-transparent transition"
-              />
-            </div>
-
-            {/* Row: Date with Calendar Icon */}
-            <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-700">
-              <CalendarIcon className="w-4 h-4 text-slate-400 shrink-0" />
-              <input
-                type="date"
-                value={scheduleForm.date}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, date: e.target.value })}
-                className="flex-1 bg-transparent border-0 text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
-              />
-            </div>
-
-            {/* Row: Time Range with Clock Icon & Arrow */}
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-700">
-              <Clock className="w-4 h-4 text-slate-400 shrink-0" />
-              <input
-                type="time"
-                value={scheduleForm.startTime}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, startTime: e.target.value })}
-                className="bg-transparent border-0 text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer w-20"
-              />
-              <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0 mx-auto" />
-              <input
-                type="time"
-                value={scheduleForm.endTime}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, endTime: e.target.value })}
-                className="bg-transparent border-0 text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer w-20 text-right"
-              />
-            </div>
-
-            {/* Row: Add guest */}
-            <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-700">
-              <Users className="w-4 h-4 text-slate-400 shrink-0" />
-              <input
-                type="email"
-                placeholder="Add guest"
-                value={scheduleForm.guest}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, guest: e.target.value })}
-                className="flex-1 bg-transparent border-0 text-xs text-slate-700 placeholder-slate-400 focus:outline-none"
-              />
-            </div>
-
-            {/* Row: Meeting link */}
-            <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium">
-              <Link2 className="w-4 h-4 text-slate-400 shrink-0" />
-              <input
-                type="text"
-                value={scheduleForm.meetUrl}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, meetUrl: e.target.value })}
-                className="flex-1 bg-transparent border-0 text-xs text-sky-600 font-medium focus:outline-none truncate"
-                placeholder="https://meet.google.com/..."
-              />
-            </div>
-
-            {/* Row: Add description */}
-            <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-700">
-              <AlignLeft className="w-4 h-4 text-slate-400 shrink-0" />
-              <input
-                type="text"
-                placeholder="Add description"
-                value={scheduleForm.description}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, description: e.target.value })}
-                className="flex-1 bg-transparent border-0 text-xs text-slate-700 placeholder-slate-400 focus:outline-none"
-              />
-            </div>
-
-            {/* Row: Pastel Color Circles Palette */}
-            <div className="flex items-center gap-2.5 pt-1">
-              {COLOR_OPTIONS.map((c) => {
-                const isSelected = scheduleForm.colorId === c.id;
-                return (
+            {createdEventResult ? (
+              <div className="space-y-3 text-xs">
+                <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-emerald-900 truncate">
+                      {createdEventResult.summary}
+                    </span>
+                    <span className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white border border-emerald-200 text-emerald-700">
+                      {createdEventResult.meeting_provider === "ZOOM" ? "Zoom" : "Google Meet"}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-emerald-800">
+                    {formatEventTimeRange(createdEventResult.start, createdEventResult.end)}
+                  </p>
+                  {createdEventResult.meet_url && (
+                    <div className="p-2 bg-white rounded-xl border border-emerald-200/80 break-all text-[11px] font-medium text-sky-700">
+                      {createdEventResult.meet_url}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 pt-1">
+                    {createdEventResult.meet_url && (
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(createdEventResult.meet_url, "Meeting link")}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl transition cursor-pointer"
+                      >
+                        {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedLink ? "Copied" : "Copy Meeting Link"}</span>
+                      </button>
+                    )}
+                    {createdEventResult.meet_url && (
+                      <a
+                        href={createdEventResult.meet_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 font-semibold text-xs rounded-xl hover:bg-slate-50 transition"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Open</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+                <div className="flex justify-end">
                   <button
-                    key={c.id}
                     type="button"
-                    onClick={() => setScheduleForm({ ...scheduleForm, colorId: c.id })}
-                    style={{ backgroundColor: c.bg, borderColor: c.border }}
-                    className={`w-6 h-6 rounded-full border transition cursor-pointer ${
-                      isSelected ? "ring-2 ring-sky-500 ring-offset-2 scale-110" : "hover:scale-105"
-                    }`}
-                    title={c.name}
-                  />
-                );
-              })}
-            </div>
+                    onClick={handleCloseAddSchedule}
+                    className="px-4 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-black rounded-xl transition cursor-pointer"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {scheduleError && (
+                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-[11px] font-medium text-rose-700">
+                    {scheduleError}
+                  </div>
+                )}
 
-            {/* Action Buttons: Cancel and Save */}
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={handleCloseAddSchedule}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveSchedule}
-                disabled={savingSchedule}
-                className="px-5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-black rounded-xl shadow-xs transition disabled:opacity-50 cursor-pointer"
-              >
-                {savingSchedule ? "Saving..." : "Save"}
-              </button>
-            </div>
+                {/* Input: New event title */}
+                <div>
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="New event title"
+                    value={scheduleForm.title}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, title: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-transparent transition"
+                  />
+                </div>
+
+                {/* Row: Date with Calendar Icon */}
+                <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-700">
+                  <CalendarIcon className="w-4 h-4 text-slate-400 shrink-0" />
+                  <input
+                    type="date"
+                    value={scheduleForm.date}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, date: e.target.value })}
+                    className="flex-1 bg-transparent border-0 text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
+                  />
+                </div>
+
+                {/* Row: Time Range with Clock Icon & Arrow */}
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-700">
+                  <Clock className="w-4 h-4 text-slate-400 shrink-0" />
+                  <input
+                    type="time"
+                    value={scheduleForm.startTime}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, startTime: e.target.value })}
+                    className="bg-transparent border-0 text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer w-20"
+                  />
+                  <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0 mx-auto" />
+                  <input
+                    type="time"
+                    value={scheduleForm.endTime}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, endTime: e.target.value })}
+                    className="bg-transparent border-0 text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer w-20 text-right"
+                  />
+                </div>
+
+                {/* Row: Add guest */}
+                <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-700">
+                  <Users className="w-4 h-4 text-slate-400 shrink-0" />
+                  <input
+                    type="email"
+                    placeholder="Add guest"
+                    value={scheduleForm.guest}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, guest: e.target.value })}
+                    className="flex-1 bg-transparent border-0 text-xs text-slate-700 placeholder-slate-400 focus:outline-none"
+                  />
+                </div>
+
+                {/* Row: Meeting Platform Selector */}
+                <div className="space-y-2">
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {[
+                      { id: "GOOGLE_MEET", label: "Google Meet" },
+                      { id: "ZOOM", label: "Zoom" },
+                      { id: "NONE", label: "No meeting" },
+                    ].map((opt) => {
+                      const active = scheduleForm.meetingProvider === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => {
+                            setScheduleError("");
+                            setScheduleForm({ ...scheduleForm, meetingProvider: opt.id });
+                          }}
+                          className={`px-2 py-2 rounded-xl text-[11px] font-semibold border transition cursor-pointer ${
+                            active
+                              ? "bg-slate-900 text-white border-slate-900 shadow-2xs"
+                              : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {scheduleForm.meetingProvider === "GOOGLE_MEET" && (
+                    <div className="px-3 py-2 rounded-xl bg-emerald-50/70 border border-emerald-200/80 text-[11px] text-emerald-800 flex items-center justify-between gap-2">
+                      {calendarStatus.is_connected ? (
+                        <span>A real Google Meet link will be generated via Google Calendar.</span>
+                      ) : (
+                        <>
+                          <span>Google Calendar not connected.</span>
+                          <button
+                            type="button"
+                            onClick={handleConnectCalendar}
+                            className="shrink-0 font-bold underline text-emerald-900 cursor-pointer"
+                          >
+                            Connect
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {scheduleForm.meetingProvider === "ZOOM" && (
+                    <div className="px-3 py-2 rounded-xl bg-sky-50/70 border border-sky-200/80 text-[11px] text-sky-900 flex items-center justify-between gap-2">
+                      {providersStatus?.zoom?.is_connected ? (
+                        <span>A real Zoom link will be generated and synced to Google Calendar.</span>
+                      ) : (
+                        <>
+                          <span>Zoom account not connected.</span>
+                          <button
+                            type="button"
+                            onClick={handleConnectZoom}
+                            className="shrink-0 font-bold underline text-sky-900 cursor-pointer"
+                          >
+                            Connect Zoom
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {scheduleForm.meetingProvider === "NONE" && (
+                    <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium">
+                      <Link2 className="w-4 h-4 text-slate-400 shrink-0" />
+                      <input
+                        type="text"
+                        value={scheduleForm.meetUrl}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, meetUrl: e.target.value })}
+                        className="flex-1 bg-transparent border-0 text-xs text-slate-700 placeholder-slate-400 focus:outline-none truncate"
+                        placeholder="Optional location or manual link"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Row: Add description */}
+                <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-700">
+                  <AlignLeft className="w-4 h-4 text-slate-400 shrink-0" />
+                  <input
+                    type="text"
+                    placeholder="Add description"
+                    value={scheduleForm.description}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, description: e.target.value })}
+                    className="flex-1 bg-transparent border-0 text-xs text-slate-700 placeholder-slate-400 focus:outline-none"
+                  />
+                </div>
+
+                {/* Row: Pastel Color Circles Palette */}
+                <div className="flex items-center gap-2.5 pt-1">
+                  {COLOR_OPTIONS.map((c) => {
+                    const isSelected = scheduleForm.colorId === c.id;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setScheduleForm({ ...scheduleForm, colorId: c.id })}
+                        style={{ backgroundColor: c.bg, borderColor: c.border }}
+                        className={`w-6 h-6 rounded-full border transition cursor-pointer ${
+                          isSelected ? "ring-2 ring-sky-500 ring-offset-2 scale-110" : "hover:scale-105"
+                        }`}
+                        title={c.name}
+                      />
+                    );
+                  })}
+                </div>
+
+                {/* Action Buttons: Cancel and Save */}
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={handleCloseAddSchedule}
+                    className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveSchedule}
+                    disabled={savingSchedule}
+                    className="px-5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-black rounded-xl shadow-xs transition disabled:opacity-50 cursor-pointer"
+                  >
+                    {savingSchedule
+                      ? scheduleForm.meetingProvider === "ZOOM"
+                        ? "Creating Zoom..."
+                        : scheduleForm.meetingProvider === "GOOGLE_MEET"
+                        ? "Creating Meet..."
+                        : "Saving..."
+                      : "Save"}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -1345,39 +1568,69 @@ export default function LqCalendarPage() {
                   <span>{formatDateTimeForUser(selectedEvent.start, user?.timezone)}</span>
                 </div>
 
-                {/* Google Meet Link */}
-                {selectedEvent.meet_url && (
-                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
-                        <Video className="w-3.5 h-3.5 text-sky-600" /> Google Meet Video Call
-                      </span>
+                {/* Meeting Link (Google Meet / Zoom / Manual) */}
+                {selectedEvent.meet_url && (() => {
+                  const isZoom =
+                    selectedEvent.meeting_provider === "ZOOM" ||
+                    String(selectedEvent.meet_url).toLowerCase().includes("zoom.us");
+                  const isGoogleMeet =
+                    selectedEvent.meeting_provider === "GOOGLE_MEET" ||
+                    String(selectedEvent.meet_url).toLowerCase().includes("meet.google.com");
+                  const providerTitle = isZoom
+                    ? "Zoom Video Meeting"
+                    : isGoogleMeet
+                    ? "Google Meet Video Call"
+                    : "Meeting Link";
+                  return (
+                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
+                          <Video className="w-3.5 h-3.5 text-sky-600" /> {providerTitle}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <a
+                          href={selectedEvent.meet_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl transition"
+                        >
+                          <Video className="w-3 h-3" />
+                          <span>Join Meeting</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(selectedEvent.meet_url, "Meeting link")}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 font-semibold text-xs rounded-xl hover:bg-slate-50 transition"
+                        >
+                          {copiedLink ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                          <span>{copiedLink ? "Copied" : "Copy"}</span>
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <a
-                        href={selectedEvent.meet_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl transition"
-                      >
-                        <Video className="w-3 h-3" />
-                        <span>Join Meeting</span>
-                      </a>
-                      <button
-                        type="button"
-                        onClick={() => copyToClipboard(selectedEvent.meet_url)}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 font-semibold text-xs rounded-xl hover:bg-slate-50 transition"
-                      >
-                        {copiedLink ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                        <span>{copiedLink ? "Copied" : "Copy"}</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
 
-                {/* Description */}
+                {/* Zoom Cloud Transcription Link */}
+                {selectedEvent.meet_url &&
+                  (selectedEvent.meeting_provider === "ZOOM" ||
+                    String(selectedEvent.meet_url).toLowerCase().includes("zoom.us")) && (
+                    <div className="p-3 bg-sky-50/70 rounded-2xl border border-sky-200/80 flex items-center justify-between gap-2 text-xs">
+                      <span className="text-sky-900 font-medium">
+                        Zoom cloud transcripts appear in the Transcription module after the meeting ends.
+                      </span>
+                      <Link
+                        to="/transcriptions"
+                        className="shrink-0 font-bold text-sky-700 hover:text-sky-900 underline"
+                      >
+                        View
+                      </Link>
+                    </div>
+                  )}
+
                 {/* Google Meet audio recording & CBE Transcript stored in Market Intel DB */}
-                {selectedEvent.meet_url && (
+                {selectedEvent.meet_url &&
+                  String(selectedEvent.meet_url).toLowerCase().includes("meet.google.com") && (
                   <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-bold text-slate-800 text-xs">Meeting Bot &amp; Audio Record</span>

@@ -9,6 +9,7 @@ from .calendar_services import (
     CalendarAuthError,
     CalendarError,
     GoogleCalendarOAuthService,
+    create_meet_event,
     get_calendar_credentials,
     list_events,
     delete_event,
@@ -99,7 +100,7 @@ class CalendarOAuthDisconnectView(_CalendarBase):
 class MeetingProvidersStatusView(_CalendarBase):
     """Returns connected & configured status for Google Meet, Zoom, and Microsoft Teams."""
     def get(self, request):
-        from .zoom_services import ZoomOAuthService, get_zoom_credentials
+        from .zoom_services import ZoomOAuthService, get_zoom_credentials, has_zoom_recording_scope
         from .microsoft_services import MicrosoftOAuthService, get_microsoft_credentials
 
         g_conf = GoogleOAuthService.is_configured()
@@ -107,6 +108,7 @@ class MeetingProvidersStatusView(_CalendarBase):
 
         z_conf = ZoomOAuthService.is_configured()
         z_creds = get_zoom_credentials(request.user)
+        z_has_rec = has_zoom_recording_scope(z_creds.scopes) if z_creds else False
 
         ms_conf = MicrosoftOAuthService.is_configured()
         ms_creds = get_microsoft_credentials(request.user)
@@ -121,6 +123,8 @@ class MeetingProvidersStatusView(_CalendarBase):
                 'is_connected': bool(z_creds),
                 'is_configured': z_conf,
                 'email': z_creds.email if z_creds else '',
+                'has_recording_scope': z_has_rec,
+                'needs_reconnect_for_transcriptions': bool(z_creds) and not z_has_rec,
             },
             'ms_teams': {
                 'is_connected': bool(ms_creds),
@@ -327,72 +331,337 @@ class CalendarEventsView(_CalendarBase):
             }, status=status.HTTP_200_OK)
 
     def post(self, request):
-        """Create a calendar event (with optional Google Meet conference)."""
-        creds = get_calendar_credentials(request.user)
-        summary = request.data.get('summary') or 'New Event'
-        description = request.data.get('description', '')
+        """Create a calendar event with genuine Google Meet, Zoom, or no online meeting."""
+        from django.core.cache import cache
+        from django.utils import timezone as dj_tz
+        from django.utils.dateparse import parse_datetime
+        from .models import CalendarEventRecording
+        from .zoom_services import (
+            ZoomError,
+            create_zoom_meeting,
+            delete_zoom_meeting,
+            get_zoom_credentials,
+        )
+        from transcriptions.models import MeetingTranscription
+        from transcriptions.services import create_or_update_pending_transcription
+
+        summary = (request.data.get('summary') or '').strip() or 'New Event'
+        description = (request.data.get('description') or '').strip()
         start = request.data.get('start')
         end = request.data.get('end')
-        meet_url = request.data.get('meet_url')
+        meet_url = (request.data.get('meet_url') or '').strip()
         attendees = request.data.get('attendees') or []
         color_id = request.data.get('color_id')
+        client_request_id = str(request.data.get('client_request_id') or '').strip()[:120]
+
+        profile = getattr(request.user, 'profile', None)
+        tz_name = (
+            (request.data.get('timezone') or '').strip()
+            or getattr(profile, 'timezone', '')
+            or 'UTC'
+        )
+
+        # Normalize meeting_provider while remaining backward compatible with legacy meet_url callers
+        raw_provider = str(request.data.get('meeting_provider') or '').strip().upper()
+        if raw_provider in ('GOOGLE_MEET', 'MEET', 'GOOGLE'):
+            meeting_provider = 'GOOGLE_MEET'
+        elif raw_provider == 'ZOOM':
+            meeting_provider = 'ZOOM'
+        elif raw_provider in ('NONE', 'NO_MEETING', 'MANUAL'):
+            meeting_provider = 'NONE'
+        elif meet_url and 'meet.google.com' in meet_url.lower():
+            meeting_provider = 'GOOGLE_MEET'
+        else:
+            meeting_provider = 'NONE'
 
         if not start or not end:
-            return Response({'error': 'start and end times are required.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'error': 'Start and end times are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        if creds:
+        start_dt = parse_datetime(str(start)) if 'T' in str(start) else None
+        end_dt = parse_datetime(str(end)) if 'T' in str(end) else None
+        if start_dt and not dj_tz.is_aware(start_dt):
+            start_dt = dj_tz.make_aware(start_dt, dj_tz.utc)
+        if end_dt and not dj_tz.is_aware(end_dt):
+            end_dt = dj_tz.make_aware(end_dt, dj_tz.utc)
+        if start_dt and end_dt and end_dt <= start_dt:
+            return Response(
+                {'error': 'End time must be after start time.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Idempotency guard for rapid double-clicks / retries
+        idemp_cache_key = None
+        if client_request_id:
+            idemp_cache_key = f'calendar-event-create:{request.user.id}:{client_request_id}'
+            cached_payload = cache.get(idemp_cache_key)
+            if cached_payload:
+                return Response(cached_payload, status=status.HTTP_200_OK)
+
+        # Clean attendees list
+        clean_att_emails = []
+        clean_att_objects = []
+        for a in attendees:
+            if isinstance(a, str) and a.strip():
+                clean_att_emails.append(a.strip())
+                clean_att_objects.append({'email': a.strip()})
+            elif isinstance(a, dict) and a.get('email'):
+                email_str = str(a['email']).strip()
+                if email_str:
+                    clean_att_emails.append(email_str)
+                    clean_att_objects.append({'email': email_str})
+
+        # Google Calendar connection is required for calendar schedule creation
+        creds = get_calendar_credentials(request.user)
+        if not creds:
+            return Response({
+                'error': 'Google Calendar is not connected for your account. Please connect Google Calendar first.',
+                'code': 'calendar_not_connected',
+            }, status=status.HTTP_409_CONFLICT)
+
+        # ── GOOGLE MEET ───────────────────────────────────────────────────
+        if meeting_provider == 'GOOGLE_MEET':
+            if not start_dt or not end_dt:
+                return Response(
+                    {'error': 'Valid ISO start and end datetimes are required for Google Meet events.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            duration_minutes = max(5, int((end_dt - start_dt).total_seconds() // 60))
+            req_id = f'cal-{client_request_id}' if client_request_id else f'cal-{uuid.uuid4().hex}'
             try:
-                body = {
+                created_meet = create_meet_event(
+                    creds,
+                    summary=summary,
+                    description=description,
+                    start_dt=start_dt,
+                    tz_name=tz_name,
+                    attendees=clean_att_emails,
+                    request_id=req_id,
+                    duration_minutes=duration_minutes,
+                )
+            except (CalendarAuthError, CalendarError) as exc:
+                return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as exc:
+                return Response({'error': f'Failed to create Google Meet event: {exc}'}, status=status.HTTP_400_BAD_REQUEST)
+
+            real_meet_url = created_meet.get('meet_url') or ''
+            google_event_id = created_meet.get('google_event_id') or ''
+            if not real_meet_url:
+                return Response(
+                    {'error': 'Google Calendar created the event, but did not return a Google Meet link.'},
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+
+            # Register CalendarEventRecording + pending MeetingTranscription for CBE
+            cal_rec, _ = CalendarEventRecording.objects.get_or_create(
+                user=request.user,
+                event_id=google_event_id,
+                defaults={
+                    'meeting_link': real_meet_url,
+                },
+            )
+            if not cal_rec.meeting_link and real_meet_url:
+                cal_rec.meeting_link = real_meet_url
+                cal_rec.save(update_fields=['meeting_link', 'updated_at'])
+            transcription = create_or_update_pending_transcription(
+                user=request.user,
+                provider=MeetingTranscription.Provider.GOOGLE_MEET,
+                source=MeetingTranscription.Source.CBE,
+                title=summary,
+                meeting_url=real_meet_url,
+                calendar_event_id=google_event_id,
+                calendar_recording=cal_rec,
+                scheduled_start=start_dt,
+                scheduled_end=end_dt,
+                status=MeetingTranscription.Status.PENDING,
+                status_message='Scheduled Google Meet. Transcript will appear after CBE completes.',
+            )
+
+            resp_payload = {
+                'success': True,
+                'event': {
+                    'id': google_event_id,
                     'summary': summary,
                     'description': description,
-                    'start': {'dateTime': start} if 'T' in str(start) else {'date': start},
-                    'end': {'dateTime': end} if 'T' in str(end) else {'date': end},
-                }
-                if color_id:
-                    body['colorId'] = str(color_id)
-                if attendees:
-                    clean_att = []
-                    for a in attendees:
-                        if isinstance(a, str) and a.strip():
-                            clean_att.append({'email': a.strip()})
-                        elif isinstance(a, dict) and a.get('email'):
-                            clean_att.append(a)
-                    if clean_att:
-                        body['attendees'] = clean_att
+                    'start': start_dt.isoformat(),
+                    'end': end_dt.isoformat(),
+                    'meet_url': real_meet_url,
+                    'meeting_url': real_meet_url,
+                    'meeting_provider': 'GOOGLE_MEET',
+                    'provider_meeting_id': '',
+                    'html_link': created_meet.get('html_link') or '',
+                    'attendees': clean_att_objects,
+                    'color_id': color_id,
+                    'transcription_id': str(transcription.id),
+                },
+            }
+            if idemp_cache_key:
+                cache.set(idemp_cache_key, resp_payload, 600)
+            return Response(resp_payload, status=status.HTTP_201_CREATED)
 
-                params = {'sendUpdates': 'all' if attendees else 'none'}
-                if meet_url and 'meet.google.com' in meet_url:
-                    body['conferenceData'] = {
-                        'createRequest': {
-                            'requestId': uuid.uuid4().hex,
-                            'conferenceSolutionKey': {'type': 'hangoutsMeet'},
-                        }
-                    }
-                    params['conferenceDataVersion'] = 1
-
-                created = _api_request(creds, 'POST', '/calendars/primary/events', body=body, params=params)
-                status_meet, extracted_url = extract_conference(created)
+        # ── ZOOM ──────────────────────────────────────────────────────────
+        if meeting_provider == 'ZOOM':
+            if not start_dt or not end_dt:
+                return Response(
+                    {'error': 'Valid ISO start and end datetimes are required for Zoom meetings.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            zoom_creds = get_zoom_credentials(request.user)
+            if not zoom_creds:
                 return Response({
-                    'success': True,
-                    'event': {
-                        'id': created.get('id'),
-                        'summary': created.get('summary'),
-                        'description': created.get('description'),
-                        'start': created.get('start', {}).get('dateTime') or created.get('start', {}).get('date'),
-                        'end': created.get('end', {}).get('dateTime') or created.get('end', {}).get('date'),
-                        'meet_url': extracted_url or meet_url,
-                        'html_link': created.get('htmlLink'),
-                        'attendees': created.get('attendees', []),
-                        'color_id': color_id,
-                    }
-                }, status=status.HTTP_201_CREATED)
-            except Exception as exc:
-                return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+                    'error': 'Zoom is not connected for your account. Please connect Zoom first.',
+                    'code': 'zoom_not_connected',
+                }, status=status.HTTP_409_CONFLICT)
 
-        return Response({
-            'error': 'Google Calendar is not connected for your account. Please connect Google Calendar first.',
-            'code': 'calendar_not_connected',
-        }, status=status.HTTP_409_CONFLICT)
+            duration_minutes = max(5, int((end_dt - start_dt).total_seconds() // 60))
+            try:
+                zoom_result = create_zoom_meeting(
+                    zoom_creds,
+                    summary=summary,
+                    description=description,
+                    start_dt=start_dt,
+                    tz_name=tz_name,
+                    duration_minutes=duration_minutes,
+                    enable_cloud_recording=True,
+                )
+            except ZoomError as exc:
+                return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as exc:
+                return Response({'error': f'Failed to create Zoom meeting: {exc}'}, status=status.HTTP_400_BAD_REQUEST)
+
+            zoom_join_url = zoom_result['join_url']
+            zoom_meeting_id = zoom_result['meeting_id']
+            zoom_password = zoom_result.get('password', '')
+            auto_rec_enabled = zoom_result.get('auto_recording_enabled', False)
+            auto_rec_warning = zoom_result.get('auto_recording_warning', '')
+
+            zoom_block = f"Join Zoom Meeting: {zoom_join_url}"
+            if zoom_meeting_id:
+                zoom_block += f"\nMeeting ID: {zoom_meeting_id}"
+            if zoom_password:
+                zoom_block += f"\nPasscode: {zoom_password}"
+            cal_description = f"{description}\n\n{zoom_block}".strip() if description else zoom_block
+
+            body = {
+                'summary': summary,
+                'description': cal_description,
+                'location': zoom_join_url,
+                'start': {'dateTime': start_dt.isoformat(), 'timeZone': tz_name},
+                'end': {'dateTime': end_dt.isoformat(), 'timeZone': tz_name},
+            }
+            if color_id:
+                body['colorId'] = str(color_id)
+            if clean_att_objects:
+                body['attendees'] = clean_att_objects
+
+            params = {'sendUpdates': 'all' if clean_att_objects else 'none'}
+            try:
+                created = _api_request(creds, 'POST', '/calendars/primary/events', body=body, params=params)
+            except Exception as exc:
+                # Roll back orphaned Zoom meeting so user doesn't end up with dangling Zoom links
+                delete_zoom_meeting(zoom_creds, zoom_meeting_id)
+                return Response(
+                    {'error': f'Zoom meeting was rolled back because Google Calendar sync failed: {exc}'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            google_event_id = created.get('id') or ''
+            tr_status = (
+                MeetingTranscription.Status.PENDING
+                if auto_rec_enabled
+                else MeetingTranscription.Status.UNAVAILABLE
+            )
+            tr_msg = (
+                'Scheduled Zoom meeting with cloud recording. Transcript will be fetched after the meeting ends.'
+                if auto_rec_enabled
+                else (auto_rec_warning or 'Cloud recording was not enabled for this Zoom meeting.')
+            )
+            transcription = create_or_update_pending_transcription(
+                user=request.user,
+                provider=MeetingTranscription.Provider.ZOOM,
+                source=MeetingTranscription.Source.ZOOM_CLOUD_RECORDING,
+                title=summary,
+                meeting_url=zoom_join_url,
+                provider_meeting_id=zoom_meeting_id,
+                calendar_event_id=google_event_id,
+                scheduled_start=start_dt,
+                scheduled_end=end_dt,
+                status=tr_status,
+                status_message=tr_msg,
+                source_metadata={
+                    'auto_recording_enabled': auto_rec_enabled,
+                    'auto_recording_warning': auto_rec_warning,
+                },
+            )
+
+            resp_payload = {
+                'success': True,
+                'event': {
+                    'id': google_event_id,
+                    'summary': created.get('summary') or summary,
+                    'description': created.get('description') or cal_description,
+                    'start': created.get('start', {}).get('dateTime') or start_dt.isoformat(),
+                    'end': created.get('end', {}).get('dateTime') or end_dt.isoformat(),
+                    'meet_url': zoom_join_url,
+                    'meeting_url': zoom_join_url,
+                    'meeting_provider': 'ZOOM',
+                    'provider_meeting_id': zoom_meeting_id,
+                    'zoom_password': zoom_password,
+                    'auto_recording_enabled': auto_rec_enabled,
+                    'auto_recording_warning': auto_rec_warning,
+                    'html_link': created.get('htmlLink') or '',
+                    'attendees': created.get('attendees', clean_att_objects),
+                    'color_id': color_id,
+                    'transcription_id': str(transcription.id),
+                },
+            }
+            if idemp_cache_key:
+                cache.set(idemp_cache_key, resp_payload, 600)
+            return Response(resp_payload, status=status.HTTP_201_CREATED)
+
+        # ── NO ONLINE MEETING (optional manual link) ──────────────────────
+        try:
+            body = {
+                'summary': summary,
+                'description': description,
+                'start': {'dateTime': start} if 'T' in str(start) else {'date': start},
+                'end': {'dateTime': end} if 'T' in str(end) else {'date': end},
+            }
+            if meet_url:
+                body['location'] = meet_url
+            if color_id:
+                body['colorId'] = str(color_id)
+            if clean_att_objects:
+                body['attendees'] = clean_att_objects
+
+            params = {'sendUpdates': 'all' if clean_att_objects else 'none'}
+            created = _api_request(creds, 'POST', '/calendars/primary/events', body=body, params=params)
+            _, extracted_url = extract_conference(created)
+            final_url = extracted_url or meet_url
+            resp_payload = {
+                'success': True,
+                'event': {
+                    'id': created.get('id'),
+                    'summary': created.get('summary'),
+                    'description': created.get('description'),
+                    'start': created.get('start', {}).get('dateTime') or created.get('start', {}).get('date'),
+                    'end': created.get('end', {}).get('dateTime') or created.get('end', {}).get('date'),
+                    'meet_url': final_url,
+                    'meeting_url': final_url,
+                    'meeting_provider': 'NONE',
+                    'provider_meeting_id': '',
+                    'html_link': created.get('htmlLink'),
+                    'attendees': created.get('attendees', []),
+                    'color_id': color_id,
+                },
+            }
+            if idemp_cache_key:
+                cache.set(idemp_cache_key, resp_payload, 600)
+            return Response(resp_payload, status=status.HTTP_201_CREATED)
+        except Exception as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request):
         """Delete an event by event_id."""

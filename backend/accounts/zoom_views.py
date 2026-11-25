@@ -11,6 +11,7 @@ from .zoom_services import (
     ZoomError,
     ZoomOAuthService,
     get_zoom_credentials,
+    has_zoom_recording_scope,
 )
 
 
@@ -65,9 +66,21 @@ class ZoomOAuthStatusView(_ZoomBase):
         configured = ZoomOAuthService.is_configured()
         creds = get_zoom_credentials(request.user)
         if not creds:
-            return Response({"is_connected": False, "is_configured": configured}, status=status.HTTP_200_OK)
-        return Response({"is_connected": True, "is_configured": configured, "email": creds.email,
-                         "updated_at": creds.updated_at}, status=status.HTTP_200_OK)
+            return Response({
+                "is_connected": False,
+                "is_configured": configured,
+                "has_recording_scope": False,
+                "needs_reconnect_for_transcriptions": False,
+            }, status=status.HTTP_200_OK)
+        has_rec_scope = has_zoom_recording_scope(creds.scopes)
+        return Response({
+            "is_connected": True,
+            "is_configured": configured,
+            "email": creds.email,
+            "updated_at": creds.updated_at,
+            "has_recording_scope": has_rec_scope,
+            "needs_reconnect_for_transcriptions": not has_rec_scope,
+        }, status=status.HTTP_200_OK)
 
 
 class ZoomOAuthDisconnectView(_ZoomBase):

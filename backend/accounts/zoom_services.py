@@ -41,9 +41,33 @@ class ZoomAuthError(ZoomError):
 
 
 class ZoomAPIError(ZoomError):
-    def __init__(self, message, status=None):
+    def __init__(self, message, status=None, code=None):
         super().__init__(message)
         self.status = status
+        self.code = code
+
+
+class ZoomScopeError(ZoomError):
+    """Zoom token is missing required recording/transcription OAuth scopes."""
+
+
+class ZoomRecordingNotFoundError(ZoomError):
+    """Zoom cloud recording is not yet available or does not exist for this meeting."""
+
+
+ZOOM_RECORDING_SCOPES = (
+    'cloud_recording:read:list_recording_files',
+    'cloud_recording:read:recording',
+    'recording:read',
+)
+
+
+def has_zoom_recording_scope(scopes_str) -> bool:
+    """Return True if the stored Zoom OAuth scope string includes cloud recording read permission."""
+    if not scopes_str:
+        return False
+    tokens = {tok.strip().lower() for tok in str(scopes_str).replace(',', ' ').split() if tok.strip()}
+    return any(s in tokens for s in ZOOM_RECORDING_SCOPES)
 
 
 def _zoom_redirect_uri():
@@ -67,7 +91,13 @@ def get_zoom_credentials(user):
 class ZoomOAuthService:
     STATE_MAX_AGE = 600
     STATE_SALT = 'zoom-oauth-state'
-    SCOPES = ['meeting:write', 'meeting:read', 'user:read']
+    SCOPES = [
+        'meeting:write',
+        'meeting:read',
+        'user:read',
+        'cloud_recording:read:list_recording_files',
+        'cloud_recording:read:recording',
+    ]
 
     @classmethod
     def is_configured(cls):
@@ -277,14 +307,34 @@ def zoom_api_request(creds, method, path, body=None, params=None):
         raise ZoomAPIError("Unable to reach Zoom. Please try again.")
 
 
-def create_zoom_meeting(creds, *, summary, description, start_dt, tz_name, duration_minutes=None):
-    """Create a real Zoom meeting using Zoom Meetings API."""
+def create_zoom_meeting(
+    creds,
+    *,
+    summary,
+    description,
+    start_dt,
+    tz_name,
+    duration_minutes=None,
+    enable_cloud_recording=True,
+):
+    """Create a real Zoom meeting using Zoom Meetings API.
+
+    When enable_cloud_recording is True, requests auto_recording='cloud'.
+    If the Zoom account plan does not allow cloud recording, falls back cleanly
+    to creating the meeting without auto_recording and flags the warning.
+    """
     duration = duration_minutes or getattr(settings, 'MEETING_DEFAULT_DURATION_MINUTES', DEFAULT_MEETING_DURATION_MINUTES)
     if timezone.is_aware(start_dt):
         start_utc = start_dt.astimezone(dt_timezone.utc)
     else:
         start_utc = start_dt.replace(tzinfo=dt_timezone.utc)
     start_time_iso = start_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+    base_settings = {
+        'host_video': True,
+        'participant_video': True,
+        'join_before_host': False,
+        'waiting_room': True,
+    }
     payload = {
         'topic': summary,
         'type': 2,  # Scheduled meeting
@@ -292,14 +342,34 @@ def create_zoom_meeting(creds, *, summary, description, start_dt, tz_name, durat
         'duration': duration,
         'timezone': tz_name or 'UTC',
         'agenda': description or '',
-        'settings': {
-            'host_video': True,
-            'participant_video': True,
-            'join_before_host': False,
-            'waiting_room': True,
-        },
+        'settings': dict(base_settings),
     }
-    data = zoom_api_request(creds, 'POST', '/users/me/meetings', body=payload)
+
+    auto_recording_enabled = False
+    auto_recording_warning = ''
+    if enable_cloud_recording:
+        payload['settings']['auto_recording'] = 'cloud'
+        try:
+            data = zoom_api_request(creds, 'POST', '/users/me/meetings', body=payload)
+            auto_recording_enabled = True
+        except ZoomAPIError as exc:
+            msg_lower = str(exc).lower()
+            if exc.status in (400, 403) and any(
+                k in msg_lower for k in ('recording', 'cloud', 'auto_recording', 'license', 'plan')
+            ):
+                logger.info('Zoom cloud auto_recording unsupported for user %s; retrying without it.', creds.user_id)
+                payload['settings'] = dict(base_settings)
+                data = zoom_api_request(creds, 'POST', '/users/me/meetings', body=payload)
+                auto_recording_enabled = False
+                auto_recording_warning = (
+                    'Zoom cloud auto-recording is not available on this Zoom plan; '
+                    'meeting created without automatic cloud transcription.'
+                )
+            else:
+                raise
+    else:
+        data = zoom_api_request(creds, 'POST', '/users/me/meetings', body=payload)
+
     meeting_id = str(data.get('id') or '')
     join_url = data.get('join_url')
     if not join_url:
@@ -311,7 +381,114 @@ def create_zoom_meeting(creds, *, summary, description, start_dt, tz_name, durat
         'password': data.get('password', ''),
         'start_url': data.get('start_url', ''),
         'status': 'READY',
+        'auto_recording_enabled': auto_recording_enabled,
+        'auto_recording_warning': auto_recording_warning,
     }
+
+
+def _encode_zoom_meeting_id(meeting_id: str) -> str:
+    """Encode Zoom meeting ID or UUID for path usage (double-encode UUIDs containing '/' per Zoom API spec)."""
+    raw = str(meeting_id).strip()
+    if raw.startswith('/') or '//' in raw:
+        return urllib.parse.quote(urllib.parse.quote(raw, safe=''), safe='')
+    return urllib.parse.quote(raw, safe='')
+
+
+def get_zoom_meeting_recordings(creds, meeting_id):
+    """Fetch cloud recording metadata and recording_files for a Zoom meeting.
+
+    Handles 401 with a single automatic token refresh retry, maps 404/3301 to
+    ZoomRecordingNotFoundError, and maps 403/4711 (missing recording scope) to
+    ZoomScopeError WITHOUT deactivating the user's Zoom credentials.
+    """
+    encoded_id = _encode_zoom_meeting_id(meeting_id)
+    path = f'/meetings/{encoded_id}/recordings'
+    token = ZoomOAuthService.get_valid_access_token(creds)
+
+    for attempt in range(2):
+        try:
+            return _zoom_api_request_raw(token, 'GET', path)
+        except urllib.error.HTTPError as e:
+            raw = e.read().decode('utf-8', errors='ignore')
+            err_code = None
+            err_msg = raw[:300]
+            try:
+                parsed = json.loads(raw)
+                err_code = parsed.get('code')
+                err_msg = parsed.get('message') or err_msg
+            except Exception:
+                pass
+
+            if e.code == 401 and attempt == 0:
+                token = ZoomOAuthService.refresh_access_token(creds)
+                continue
+            if e.code == 404 or err_code == 3301:
+                raise ZoomRecordingNotFoundError(err_msg or 'Zoom cloud recording not found.')
+            if e.code == 403 or err_code == 4711 or 'scope' in err_msg.lower():
+                raise ZoomScopeError(
+                    'Zoom account is missing cloud recording read permissions '
+                    '(cloud_recording:read:list_recording_files / cloud_recording:read:recording). '
+                    'Please reconnect Zoom in Settings.'
+                )
+            if e.code == 401:
+                creds.is_active = False
+                creds.save(update_fields=['is_active', 'updated_at'])
+                raise ZoomAuthError('Zoom authorization expired. Please reconnect Zoom.')
+            raise ZoomAPIError(f'Zoom recordings request failed: {err_msg}', status=e.code, code=err_code)
+        except ZoomError:
+            raise
+        except Exception as exc:
+            logger.error('Zoom recordings network error: %s', exc)
+            raise ZoomAPIError('Unable to reach Zoom recordings API.')
+
+
+def download_zoom_recording_file(creds, download_url, *, download_token=None) -> bytes:
+    """Download a Zoom cloud recording file (such as a VTT audio transcript).
+
+    Uses the webhook download_token if supplied, otherwise uses the user's
+    OAuth Bearer token (with automatic single refresh retry on 401).
+    """
+    if not download_url:
+        raise ZoomAPIError('Missing Zoom recording download URL.')
+
+    def _do_download(bearer_token: str) -> bytes:
+        req = urllib.request.Request(
+            download_url,
+            method='GET',
+            headers={
+                'Authorization': f'Bearer {bearer_token}',
+                'Accept': 'text/vtt, text/plain, */*',
+            },
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.read()
+
+    if download_token:
+        try:
+            return _do_download(download_token)
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (401, 403):
+                raise ZoomAPIError(f'Zoom recording download failed ({exc.code}).', status=exc.code)
+            # Fall through to OAuth token if webhook download_token expired
+
+    token = ZoomOAuthService.get_valid_access_token(creds)
+    for attempt in range(2):
+        try:
+            return _do_download(token)
+        except urllib.error.HTTPError as e:
+            if e.code == 401 and attempt == 0:
+                token = ZoomOAuthService.refresh_access_token(creds)
+                continue
+            if e.code == 403:
+                raise ZoomScopeError(
+                    'Zoom recording download forbidden. Please reconnect Zoom with cloud recording permissions.'
+                )
+            raise ZoomAPIError(f'Zoom recording download failed ({e.code}).', status=e.code)
+        except ZoomError:
+            raise
+        except Exception as exc:
+            logger.error('Zoom recording download network error: %s', exc)
+            raise ZoomAPIError('Unable to download Zoom recording file.')
 
 
 def delete_zoom_meeting(creds, meeting_id):

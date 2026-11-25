@@ -930,6 +930,19 @@ def ingest_cbe_completed_webhook(
                     setattr(cal_rec, attr, val)
             cal_rec.save()
 
+        try:
+            from transcriptions.services import upsert_from_cbe
+
+            upsert_from_cbe(
+                payload,
+                job=job,
+                meeting_obj=meeting_obj,
+                cal_rec=cal_rec,
+                delivery_id=del_id,
+            )
+        except Exception as exc:
+            logger.exception("Failed to upsert MeetingTranscription from CBE webhook: %s", exc)
+
     return {
         "duplicate": False,
         "job_id": str(job.id) if job else None,
@@ -974,9 +987,12 @@ def should_autostart_meeting_scheduler() -> bool:
 
 
 def _meeting_scheduler_loop() -> None:
+    import time as _time
     from django.db import connection
 
     interval = max(10, int(_get_env("CBE_SCHEDULER_POLL_SECONDS", "20") or 20))
+    transcription_interval = max(60, int(_get_env("TRANSCRIPTION_POLL_SECONDS", "300") or 300))
+    last_transcription_check = 0.0
     logger.info("CBE Meeting Automation background scheduler started (poll=%ss).", interval)
     if _SCHEDULER_STOP.wait(3.0):
         return
@@ -987,11 +1003,23 @@ def _meeting_scheduler_loop() -> None:
                 logger.info("CBE Meeting Scheduler tick: %s", res)
         except Exception as exc:
             logger.debug("CBE Meeting Scheduler cycle skipped: %s", exc)
-        finally:
+
+        now_mono = _time.monotonic()
+        if now_mono - last_transcription_check >= transcription_interval:
+            last_transcription_check = now_mono
             try:
-                connection.close()
-            except Exception:
-                pass
+                from transcriptions.services import process_pending_transcriptions
+
+                tr_res = process_pending_transcriptions(max_items=25)
+                if tr_res.get("completed") or tr_res.get("discovered"):
+                    logger.info("Pending transcription recovery tick: %s", tr_res)
+            except Exception as exc:
+                logger.debug("Pending transcription recovery cycle skipped: %s", exc)
+
+        try:
+            connection.close()
+        except Exception:
+            pass
         _SCHEDULER_STOP.wait(interval)
 
 
