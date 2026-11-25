@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - main
+      - fix-architecture-security
   pull_request:
     branches:
       - main
+      - fix-architecture-security
   workflow_dispatch:
 
 # Least-privilege permissions across all jobs
@@ -148,7 +150,7 @@ jobs:
   build-artifacts:
     name: Build & Scan Release Artifacts
     needs: [backend-test, frontend-test, secret-scan]
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix-architecture-security')
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -208,7 +210,7 @@ jobs:
   deploy:
     name: Deploy to Hostinger VPS KVM 2
     needs: [build-artifacts]
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix-architecture-security')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment:
