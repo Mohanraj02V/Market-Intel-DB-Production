@@ -42,7 +42,7 @@ if [[ -d "${FRONTEND_RELEASES}/${TARGET_SHA}" ]]; then
 fi
 
 export API_IMAGE="${IMAGE_NAME}"
-docker compose -f "${COMPOSE_FILE}" up -d --remove-orphans
+docker compose --env-file "${BASE_DIR}/.env" -f "${COMPOSE_FILE}" up -d --remove-orphans
 
 /usr/local/sbin/marketintel-health
 echo "${TARGET_SHA}" > "${BASE_DIR}/CURRENT_RELEASE"

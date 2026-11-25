@@ -37,8 +37,10 @@ else
   cp "${BACKUP_DIR}/postgres.dump" "${TMP_RESTORE}/postgres.dump"
 fi
 
+HOST_DATABASE_URL="${DATABASE_URL/@db:/@127.0.0.1:}"
+
 echo "=== [2/4] Restoring PostgreSQL database into TARGET DATABASE_URL ==="
-pg_restore --clean --if-exists --no-owner --no-privileges -d "${DATABASE_URL}" "${TMP_RESTORE}/postgres.dump"
+pg_restore --clean --if-exists --no-owner --no-privileges -d "${HOST_DATABASE_URL}" "${TMP_RESTORE}/postgres.dump"
 
 echo "=== [3/4] Restoring persistent media (if present) ==="
 if [[ -f "${BACKUP_DIR}/media.tar.gz.enc" ]]; then
@@ -52,5 +54,5 @@ fi
 chown -R 10001:10001 "${BASE_DIR}/media"
 
 echo "=== [4/4] Verifying row counts and connectivity ==="
-psql "${DATABASE_URL}" -c "SELECT count(*) AS users FROM auth_user; SELECT count(*) AS prospects FROM prospects_prospect;"
+psql "${HOST_DATABASE_URL}" -c "SELECT count(*) AS users FROM auth_user; SELECT count(*) AS prospects FROM prospects_prospect;"
 echo "Restore complete."

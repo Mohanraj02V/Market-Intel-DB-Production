@@ -58,7 +58,10 @@ fi
 echo "=== [3/8] Loading immutable backend Docker image (${IMAGE_NAME}) ==="
 gunzip -c "${RELEASE_DIR}/backend-image.tar.gz" | docker load
 
-echo "=== [4/8] Optional pre-migration backup ==="
+echo "=== [4/8] Ensuring PostgreSQL (pgvector) is healthy & optional pre-migration backup ==="
+export API_IMAGE="${IMAGE_NAME}"
+docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --wait db
+
 if [[ "${BACKUP_BEFORE_DEPLOY:-true}" == "true" && -x /usr/local/sbin/marketintel-backup ]]; then
   /usr/local/sbin/marketintel-backup || echo "WARN: Pre-deploy backup exited non-zero; continuing with caution."
 fi
@@ -66,28 +69,16 @@ fi
 echo "=== [5/8] Running Django deploy checks, migrations, and collectstatic ==="
 chown -R 10001:10001 "${BASE_DIR}/staticfiles" "${BASE_DIR}/media"
 
-docker run --rm --env-file "${ENV_FILE}" \
-  -v "${BASE_DIR}/staticfiles:/app/staticfiles" \
-  -v "${BASE_DIR}/media:/app/media" \
-  "${IMAGE_NAME}" python manage.py check --deploy
-
-docker run --rm --env-file "${ENV_FILE}" \
-  -v "${BASE_DIR}/staticfiles:/app/staticfiles" \
-  -v "${BASE_DIR}/media:/app/media" \
-  "${IMAGE_NAME}" python manage.py migrate --noinput
-
-docker run --rm --env-file "${ENV_FILE}" \
-  -v "${BASE_DIR}/staticfiles:/app/staticfiles" \
-  -v "${BASE_DIR}/media:/app/media" \
-  "${IMAGE_NAME}" python manage.py collectstatic --noinput
+docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" run --rm --no-deps api python manage.py check --deploy
+docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" run --rm --no-deps api python manage.py migrate --noinput
+docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" run --rm --no-deps api python manage.py collectstatic --noinput
 
 echo "=== [6/8] Deploying static frontend build ==="
 tar -xzf "${RELEASE_DIR}/frontend-dist.tar.gz" -C "${FRONTEND_RELEASES}/${RELEASE_SHA}"
 ln -sfn "${FRONTEND_RELEASES}/${RELEASE_SHA}" "${FRONTEND_CURRENT}"
 
-echo "=== [7/8] Starting API, Campaign Worker, and RAG Worker via Docker Compose ==="
-export API_IMAGE="${IMAGE_NAME}"
-docker compose -f "${COMPOSE_FILE}" up -d --remove-orphans
+echo "=== [7/8] Starting DB, API, Campaign Worker, and RAG Worker via Docker Compose ==="
+docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --remove-orphans
 
 echo "=== [8/8] Verifying service health ==="
 if ! /usr/local/sbin/marketintel-health; then
