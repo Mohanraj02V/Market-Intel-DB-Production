@@ -37,10 +37,14 @@ else
   cp "${BACKUP_DIR}/postgres.dump" "${TMP_RESTORE}/postgres.dump"
 fi
 
-HOST_DATABASE_URL="${DATABASE_URL/@db:/@127.0.0.1:}"
-
-echo "=== [2/4] Restoring PostgreSQL database into TARGET DATABASE_URL ==="
-pg_restore --clean --if-exists --no-owner --no-privileges -d "${HOST_DATABASE_URL}" "${TMP_RESTORE}/postgres.dump"
+echo "=== [2/4] Restoring PostgreSQL database ==="
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'marketintel-db'; then
+  docker exec -i marketintel-db pg_restore -U "${POSTGRES_USER:-marketintel}" -d "${POSTGRES_DB:-marketintel}" \
+    --clean --if-exists --no-owner --no-privileges < "${TMP_RESTORE}/postgres.dump"
+else
+  HOST_DATABASE_URL="${DATABASE_URL/@db:/@127.0.0.1:}"
+  pg_restore --clean --if-exists --no-owner --no-privileges -d "${HOST_DATABASE_URL}" "${TMP_RESTORE}/postgres.dump"
+fi
 
 echo "=== [3/4] Restoring persistent media (if present) ==="
 if [[ -f "${BACKUP_DIR}/media.tar.gz.enc" ]]; then
@@ -54,5 +58,11 @@ fi
 chown -R 10001:10001 "${BASE_DIR}/media"
 
 echo "=== [4/4] Verifying row counts and connectivity ==="
-psql "${HOST_DATABASE_URL}" -c "SELECT count(*) AS users FROM auth_user; SELECT count(*) AS prospects FROM prospects_prospect;"
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'marketintel-db'; then
+  docker exec marketintel-db psql -U "${POSTGRES_USER:-marketintel}" -d "${POSTGRES_DB:-marketintel}" \
+    -c "SELECT count(*) AS users FROM auth_user; SELECT count(*) AS prospects FROM prospects_prospect;"
+else
+  HOST_DATABASE_URL="${DATABASE_URL/@db:/@127.0.0.1:}"
+  psql "${HOST_DATABASE_URL}" -c "SELECT count(*) AS users FROM auth_user; SELECT count(*) AS prospects FROM prospects_prospect;"
+fi
 echo "Restore complete."

@@ -32,11 +32,14 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
   exit 1
 fi
 
-# When using Docker Compose local PostgreSQL (@db:5432), connect via loopback 127.0.0.1 from the host
-HOST_DATABASE_URL="${DATABASE_URL/@db:/@127.0.0.1:}"
-
 echo "[${STAMP}] Starting PostgreSQL backup..."
-pg_dump --format=custom --no-owner --no-privileges "${HOST_DATABASE_URL}" -f "${WORK_DIR}/postgres.dump"
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'marketintel-db'; then
+  docker exec marketintel-db pg_dump -U "${POSTGRES_USER:-marketintel}" -d "${POSTGRES_DB:-marketintel}" \
+    --format=custom --no-owner --no-privileges > "${WORK_DIR}/postgres.dump"
+else
+  HOST_DATABASE_URL="${DATABASE_URL/@db:/@127.0.0.1:}"
+  pg_dump --format=custom --no-owner --no-privileges "${HOST_DATABASE_URL}" -f "${WORK_DIR}/postgres.dump"
+fi
 
 echo "[${STAMP}] Archiving persistent media..."
 if [[ -d "${BASE_DIR}/media" ]]; then

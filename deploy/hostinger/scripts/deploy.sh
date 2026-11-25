@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+git commit -m "Add local PostgreSQL 16 pgvector service to Hostinger stack"#!/usr/bin/env bash
 # =============================================================================
 # Root-owned Market Intel DB Deployment Helper (/usr/local/sbin/marketintel-deploy)
 # Usage: sudo /usr/local/sbin/marketintel-deploy <commit_sha>
