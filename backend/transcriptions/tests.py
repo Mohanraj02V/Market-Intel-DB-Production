@@ -641,6 +641,7 @@ class CalendarMeetingLinkGenerationTests(TestCase):
             'end': self.end.isoformat(),
             'meeting_provider': 'ZOOM',
             'timezone': 'UTC',
+            'color_id': 'skyblue',
         }, format='json')
         self.assertEqual(res.status_code, 201)
         self.assertEqual(res.data['event']['meet_url'], 'https://us02web.zoom.us/j/999888777')
@@ -648,9 +649,11 @@ class CalendarMeetingLinkGenerationTests(TestCase):
         self.assertEqual(res.data['event']['provider_meeting_id'], '999888777')
 
         # Ensure Google Calendar body did NOT attach a Google Meet conference
+        # and mapped UI color 'skyblue' to valid Google Calendar colorId '7'
         gcal_body = mock_gcal.call_args.kwargs['body']
         self.assertNotIn('conferenceData', gcal_body)
         self.assertEqual(gcal_body['location'], 'https://us02web.zoom.us/j/999888777')
+        self.assertEqual(gcal_body['colorId'], '7')
 
         tr = MeetingTranscription.objects.get(provider_meeting_id='999888777')
         self.assertEqual(tr.provider, MeetingTranscription.Provider.ZOOM)

@@ -21,6 +21,26 @@ from .oauth_services import GoogleOAuthService
 from .serializers import GmailOAuthCallbackSerializer  # plain {code, state} serializer
 
 
+_UI_COLOR_TO_GOOGLE_COLOR_ID = {
+    'lavender': '1',
+    'mint': '2',
+    'peach': '5',
+    'skyblue': '7',
+    'gray': '8',
+}
+_VALID_GOOGLE_COLOR_IDS = {str(i) for i in range(1, 12)}
+
+
+def _resolve_google_color_id(raw_color_id):
+    """Map UI pastel color names or numeric Google Calendar color IDs ('1'-'11') to a valid Google colorId."""
+    if not raw_color_id:
+        return None
+    val = str(raw_color_id).strip().lower()
+    if val in _VALID_GOOGLE_COLOR_IDS:
+        return val
+    return _UI_COLOR_TO_GOOGLE_COLOR_ID.get(val)
+
+
 def _can_use_calendar(user):
     """PRE, LQ and MANAGER users (and superusers) may use Calendar."""
     if user.is_superuser:
@@ -551,8 +571,9 @@ class CalendarEventsView(_CalendarBase):
                 'start': {'dateTime': start_dt.isoformat(), 'timeZone': tz_name},
                 'end': {'dateTime': end_dt.isoformat(), 'timeZone': tz_name},
             }
-            if color_id:
-                body['colorId'] = str(color_id)
+            google_color_id = _resolve_google_color_id(color_id)
+            if google_color_id:
+                body['colorId'] = google_color_id
             if clean_att_objects:
                 body['attendees'] = clean_att_objects
 
@@ -631,8 +652,9 @@ class CalendarEventsView(_CalendarBase):
             }
             if meet_url:
                 body['location'] = meet_url
-            if color_id:
-                body['colorId'] = str(color_id)
+            google_color_id = _resolve_google_color_id(color_id)
+            if google_color_id:
+                body['colorId'] = google_color_id
             if clean_att_objects:
                 body['attendees'] = clean_att_objects
 
