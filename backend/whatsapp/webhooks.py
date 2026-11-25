@@ -32,6 +32,7 @@ import mimetypes
 import os
 import re
 import tempfile
+import uuid
 from typing import Optional
 
 from django.core.files.base import ContentFile
