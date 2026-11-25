@@ -14,11 +14,11 @@ import GeminiEmailPromptBox from './GeminiEmailPromptBox';
 import AttachmentLibraryModal from './AttachmentLibraryModal';
 
 const STEPS = [
-  { id: 'ai_drafts', label: '✨ AI Outreach Drafts (10/Section)' },
+  { id: 'ai_drafts', label: 'Outreach Drafts' },
   { id: 'compose', label: '1. Compose' },
   { id: 'recipients', label: '2. Recipients' },
   { id: 'confirm', label: '3. Review' },
-  { id: 'monitor', label: 'Campaign Monitor' }
+  { id: 'monitor', label: 'Campaigns' }
 ];
 
 export default function BulkCampaignModal({ isOpen = true, onClose, onSelectRecipientEmail, onOpenTrackingModal, initialTab = 'ai_drafts', fullPage = false }) {
@@ -47,7 +47,7 @@ export default function BulkCampaignModal({ isOpen = true, onClose, onSelectReci
   const [unsentSearch, setUnsentSearch] = useState('');
   const [selectedUnsentProspectIds, setSelectedUnsentProspectIds] = useState([]);
   const [aiPrompt, setAiPrompt] = useState(
-    'Analyze each outreach company (name, mobile number, email, product offerings, and primary industries) alongside our company portfolio from the Vector DB and write a tailored, high-converting B2B outreach email.'
+    'Write a clear, tailored B2B introduction email highlighting how our company offerings match each prospect.'
   );
   const [aiTone, setAiTone] = useState('professional');
   const [generatingAiDrafts, setGeneratingAiDrafts] = useState(false);
@@ -753,18 +753,13 @@ export default function BulkCampaignModal({ isOpen = true, onClose, onSelectReci
         {/* Top Header - Full Page Campaign Workspace */}
         <div className="px-6 py-4 bg-white border-b border-slate-200/80 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
-              <Users className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+              <Send className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">AI Email Campaign Workspace</h2>
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200/60 flex items-center gap-1">
-                  <Clock className="w-3 h-3" /> 90s pacing • 10 Drafts / Section
-                </span>
-              </div>
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">Email Campaign Workspace</h2>
               <p className="text-xs text-slate-500">
-                Live sent-mail check, Google Gemini customized outreach email drafting, and section-based 90-second paced sending.
+                Create, review, and send personalized outreach campaigns.
               </p>
             </div>
           </div>
@@ -825,128 +820,100 @@ export default function BulkCampaignModal({ isOpen = true, onClose, onSelectReci
         {/* Body Content */}
         <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
 
-          {/* TAB 0: AI OUTREACH DRAFTS & SECTION REVIEW/SEND (10 PER SECTION) */}
+          {/* TAB 0: OUTREACH DRAFTS */}
           {currentTab === 'ai_drafts' && (
-            <div className="space-y-6">
-              {/* Top Panel: Outreach Data Analysis & Gemini Draft Generator */}
-              <div className="bg-white rounded-2xl border border-indigo-200/80 shadow-xs p-5 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                      <Sparkles className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-bold text-slate-900 text-sm sm:text-base">
-                          AI-Powered Outreach Analysis & Customized Email Drafting
-                        </h3>
-                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                          10 Drafts / Section • 90s Interval
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setLiveListenerEnabled(prev => !prev)}
-                          className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border flex items-center gap-1.5 transition cursor-pointer ${
-                            liveListenerEnabled
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : 'bg-slate-100 text-slate-500 border-slate-200'
-                          }`}
-                          title="Toggle live sent-mail check & automatic AI drafting for unsent outreach records"
-                        >
-                          <span className={`w-2 h-2 rounded-full ${liveListenerEnabled ? 'bg-emerald-500 animate-ping' : 'bg-slate-400'}`} />
-                          <span>
-                            {liveListenerEnabled ? 'Live Sent-Mail Listener: ON' : 'Live Sent-Mail Listener: PAUSED'}
-                          </span>
-                          {lastLiveCheckAt && (
-                            <span className="text-[10px] opacity-75">
-                              • {new Date(lastLiveCheckAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                            </span>
-                          )}
-                        </button>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Continuously checks sent mail across Outreach, Inbox, and Campaigns so Google Gemini only drafts customized emails for unsent outreach records (grouped into 10 drafts per section).
-                      </p>
-                    </div>
+            <div className="space-y-5">
+              {/* Top Panel: Clean Campaign Setup */}
+              <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-sm sm:text-base">
+                      Personalized Outreach Drafts
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Select contacts who haven&apos;t been emailed yet and generate ready-to-review drafts.
+                    </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => runLiveSentMailSync({ autoDraft: true, silent: false, campaignId: activeCampaignDetail?.id || null })}
-                    disabled={loadingUnsent}
-                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-full text-xs font-medium flex items-center gap-1.5 self-start sm:self-center transition cursor-pointer shrink-0"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${loadingUnsent ? 'animate-spin' : ''}`} />
-                    <span>Sync Sent Mail & Auto-Draft</span>
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setLiveListenerEnabled(prev => !prev)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition cursor-pointer ${
+                        liveListenerEnabled
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-slate-50 text-slate-500 border-slate-200'
+                      }`}
+                    >
+                      Auto-Sync: {liveListenerEnabled ? 'On' : 'Paused'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => runLiveSentMailSync({ autoDraft: true, silent: false, campaignId: activeCampaignDetail?.id || null })}
+                      disabled={loadingUnsent}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${loadingUnsent ? 'animate-spin' : ''}`} />
+                      <span>Refresh</span>
+                    </button>
+                  </div>
                 </div>
 
-                {/* Summary Cards: Unsent Outreach Count, Sections, Vector DB Portfolio */}
+                {/* Clean Business-Friendly Summary Strip */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-100">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-600">
-                      Unsent Outreach Records
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                    <span className="text-[11px] font-semibold text-slate-500">
+                      Contacts to Email
                     </span>
                     <div className="flex items-baseline gap-2 mt-1">
-                      <span className="text-2xl font-bold text-slate-900">{unsentAnalysis.total_unsent}</span>
-                      <span className="text-xs text-slate-600">
-                        ({selectedUnsentProspectIds.length} selected for drafting)
+                      <span className="text-xl font-bold text-slate-900">{unsentAnalysis.total_unsent}</span>
+                      <span className="text-xs text-slate-500">
+                        {selectedUnsentProspectIds.length} selected
                       </span>
                     </div>
                   </div>
 
-                  <div className="p-3.5 rounded-xl bg-blue-50/60 border border-blue-100">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-blue-600">
-                      Campaigns & Sections (50 / Camp • 10 / Sec)
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                    <span className="text-[11px] font-semibold text-slate-500">
+                      Send Batches
                     </span>
                     <div className="flex items-baseline gap-2 mt-1">
-                      <span className="text-2xl font-bold text-slate-900">
-                        {Math.ceil((selectedUnsentProspectIds.length || unsentAnalysis.total_unsent || 0) / 50) || 0}
+                      <span className="text-xl font-bold text-slate-900">
+                        {Math.ceil((selectedUnsentProspectIds.length || unsentAnalysis.total_unsent || 0) / 10)}
                       </span>
-                      <span className="text-xs text-slate-600">
-                        campaign(s) • {Math.ceil((selectedUnsentProspectIds.length || unsentAnalysis.total_unsent || 0) / 10)} section(s)
+                      <span className="text-xs text-slate-500">
+                        batches of 10
                       </span>
                     </div>
                   </div>
 
-                  <div className={`p-3.5 rounded-xl border ${
-                    unsentAnalysis.portfolio?.portfolio_ready
-                      ? 'bg-emerald-50/60 border-emerald-200'
-                      : 'bg-amber-50/60 border-amber-200'
-                  }`}>
-                    <span className={`text-[11px] font-semibold uppercase tracking-wider ${
-                      unsentAnalysis.portfolio?.portfolio_ready ? 'text-emerald-700' : 'text-amber-700'
-                    }`}>
-                      Vector DB Company Portfolio
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                    <span className="text-[11px] font-semibold text-slate-500">
+                      Company Profile
                     </span>
                     <div className="mt-1">
                       {unsentAnalysis.portfolio?.portfolio_ready ? (
-                        <>
-                          <p className="text-xs font-bold text-emerald-900 flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            <span>{unsentAnalysis.portfolio.portfolio_documents.length} Portfolio Doc(s) Ready ({unsentAnalysis.portfolio.portfolio_chunks_count} Chunks)</span>
-                          </p>
-                          <p className="text-[11px] text-emerald-700 truncate mt-0.5" title={unsentAnalysis.portfolio.portfolio_documents.join(', ')}>
-                            {unsentAnalysis.portfolio.portfolio_documents.join(', ')}
-                          </p>
-                        </>
+                        <p className="text-xs font-semibold text-emerald-700 flex items-center gap-1.5 mt-1">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>{unsentAnalysis.portfolio.portfolio_documents.length} brochure(s) attached</span>
+                        </p>
                       ) : (
-                        <p className="text-xs font-medium text-amber-800">
-                          Using outreach company profile + AI prompt (upload portfolio docs in Knowledge Base for deeper RAG grounding)
+                        <p className="text-xs text-slate-500 mt-1">
+                          Standard outreach profile
                         </p>
                       )}
                     </div>
                   </div>
                 </div>
 
-                {/* Campaign Name, Tone & AI Prompt Configuration */}
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 pt-1">
+                {/* Campaign Name, Tone & Open Tracking */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
                   <div className="md:col-span-5">
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
                       Campaign Name
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. Q4 AI Personalized Outreach Campaign"
+                      placeholder="e.g. Q4 Client Outreach"
                       value={campaignName}
                       onChange={(e) => setCampaignName(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition"
@@ -979,24 +946,24 @@ export default function BulkCampaignModal({ isOpen = true, onClose, onSelectReci
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Google Gemini Customization Instructions (Combined with Each Company's Outreach Data & Vector DB Portfolio)
+                    Email Instructions
                   </label>
                   <textarea
                     rows={2}
                     value={aiPrompt}
                     onChange={(e) => setAiPrompt(e.target.value)}
-                    placeholder="Instructions for how Google Gemini should pitch our portfolio to each outreach company..."
+                    placeholder="Describe what you want these outreach emails to focus on..."
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition"
                   />
                 </div>
 
-                {/* Unsent Outreach Records Table Preview (Collapsible/Scrollable) */}
-                <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50/40">
-                  <div className="px-4 py-2.5 bg-slate-100/80 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                {/* Unsent Outreach Contacts List */}
+                <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+                  <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <Building2 className="w-4 h-4 text-indigo-600" />
+                      <Building2 className="w-4 h-4 text-slate-500" />
                       <span className="text-xs font-bold text-slate-800">
-                        Eligible Outreach Records with Unsent Emails ({unsentAnalysis.records.length})
+                        Select Recipients ({unsentAnalysis.records.length})
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
@@ -1004,52 +971,50 @@ export default function BulkCampaignModal({ isOpen = true, onClose, onSelectReci
                         <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" />
                         <input
                           type="text"
-                          placeholder="Filter outreach companies..."
+                          placeholder="Search companies..."
                           value={unsentSearch}
                           onChange={(e) => {
                             setUnsentSearch(e.target.value);
                             fetchUnsentOutreach(e.target.value);
                           }}
-                          className="bg-white border border-slate-200 rounded-full pl-8 pr-3 py-1 text-xs text-slate-800 outline-none focus:border-indigo-500"
+                          className="bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-1 text-xs text-slate-800 outline-none focus:border-indigo-500"
                         />
                       </div>
                       <button
                         type="button"
                         onClick={() => setSelectedUnsentProspectIds(unsentAnalysis.records.map(r => r.prospect_id))}
-                        className="px-2.5 py-1 bg-white border border-slate-200 rounded-full text-[11px] font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                        className="px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-[11px] font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                       >
                         Select All
                       </button>
                       <button
                         type="button"
                         onClick={() => setSelectedUnsentProspectIds([])}
-                        className="px-2.5 py-1 bg-white border border-slate-200 rounded-full text-[11px] font-semibold text-slate-500 hover:bg-slate-50 cursor-pointer"
+                        className="px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-[11px] font-semibold text-slate-500 hover:bg-slate-50 cursor-pointer"
                       >
                         Clear
                       </button>
                     </div>
                   </div>
 
-                  <div className="max-h-48 overflow-y-auto divide-y divide-slate-200/60 bg-white">
+                  <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 bg-white">
                     {loadingUnsent ? (
                       <div className="p-6 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
-                        <RefreshCw className="w-4 h-4 animate-spin" /> Analyzing outreach database for unsent emails...
+                        <RefreshCw className="w-4 h-4 animate-spin" /> Loading contacts...
                       </div>
                     ) : unsentAnalysis.records.length === 0 ? (
                       <div className="p-6 text-center text-xs text-slate-500">
-                        All outreach records in your pipeline have already been sent emails, or no matching unsent records were found.
+                        No unsent contacts found.
                       </div>
                     ) : (
-                      unsentAnalysis.records.map((rec, idx) => {
+                      unsentAnalysis.records.map((rec) => {
                         const checked = selectedUnsentProspectIds.includes(rec.prospect_id);
-                        const campIdx = Math.floor(idx / 50) + 1;
-                        const secIdx = (Math.floor(idx / 10) % 5) + 1;
                         return (
                           <div
                             key={rec.prospect_id || rec.email}
                             onClick={() => handleToggleUnsentProspect(rec.prospect_id)}
                             className={`px-4 py-2.5 flex items-center justify-between gap-3 text-xs cursor-pointer transition ${
-                              checked ? 'bg-indigo-50/40 hover:bg-indigo-50/70' : 'hover:bg-slate-50 opacity-60'
+                              checked ? 'bg-indigo-50/40 hover:bg-indigo-50/70' : 'hover:bg-slate-50 opacity-65'
                             }`}
                           >
                             <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -1058,30 +1023,18 @@ export default function BulkCampaignModal({ isOpen = true, onClose, onSelectReci
                               ) : (
                                 <Square className="w-4 h-4 text-slate-300 shrink-0" />
                               )}
-                              <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-mono text-[10px] font-semibold shrink-0">
-                                Camp {campIdx} • Sec {secIdx}
-                              </span>
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-bold text-slate-900 truncate">{rec.company_name}</span>
+                                  <span className="font-semibold text-slate-900 truncate">{rec.company_name}</span>
                                   {rec.primary_industries && (
-                                    <span className="px-2 py-0.2 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 text-slate-600 truncate max-w-xs">
                                       {rec.primary_industries}
                                     </span>
                                   )}
-                                  {rec.phone_number && (
-                                    <span className="text-[11px] text-slate-500 font-mono">
-                                      📞 {rec.phone_number}
-                                    </span>
-                                  )}
                                 </div>
-                                <div className="flex items-center gap-2 text-[11px] text-slate-500 truncate mt-0.5">
-                                  <span className="font-medium text-slate-700">✉️ {rec.email}</span>
-                                  {rec.offerings?.length > 0 && (
-                                    <span className="text-slate-400 truncate">
-                                      • Offerings: {rec.offerings.join(', ')}
-                                    </span>
-                                  )}
+                                <div className="flex items-center gap-3 text-[11px] text-slate-500 truncate mt-0.5">
+                                  <span>{rec.email}</span>
+                                  {rec.phone_number && <span>{rec.phone_number}</span>}
                                 </div>
                               </div>
                             </div>
@@ -1093,29 +1046,23 @@ export default function BulkCampaignModal({ isOpen = true, onClose, onSelectReci
                 </div>
 
                 {/* Generate Button */}
-                <div className="flex items-center justify-between pt-2">
+                <div className="flex items-center justify-between pt-1">
                   <p className="text-xs text-slate-500">
-                    Generates <span className="font-semibold text-slate-800">{selectedUnsentProspectIds.length}</span> unique customized email draft(s) grouped into{' '}
-                    <span className="font-semibold text-slate-800">{Math.ceil((selectedUnsentProspectIds.length || 0) / 10)}</span> section(s) of 10.
+                    <span className="font-semibold text-slate-800">{selectedUnsentProspectIds.length}</span> recipient(s) selected
                   </p>
                   <button
                     type="button"
                     onClick={handleGenerateAiDrafts}
                     disabled={generatingAiDrafts || selectedUnsentProspectIds.length === 0}
-                    className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-semibold text-xs rounded-full shadow-sm hover:shadow-md transition flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                    className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl shadow-xs transition flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                   >
                     {generatingAiDrafts ? (
                       <>
                         <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Generating Customized Drafts with Gemini...</span>
+                        <span>Generating Drafts...</span>
                       </>
                     ) : (
-                      <>
-                        <Sparkles className="w-4 h-4" />
-                        <span>
-                          Generate {selectedUnsentProspectIds.length} Customized Draft(s) ({Math.ceil((selectedUnsentProspectIds.length || 0) / 10)} Section{Math.ceil((selectedUnsentProspectIds.length || 0) / 10) === 1 ? '' : 's'})
-                        </span>
-                      </>
+                      <span>Generate Drafts ({selectedUnsentProspectIds.length})</span>
                     )}
                   </button>
                 </div>

@@ -129,24 +129,11 @@ export default function DashboardLiveListener() {
               <h2 className="text-sm font-bold tracking-tight">
                 Live Activity & AI Recommendations
               </h2>
-              <span
-                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
-                  autoListen
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
-                    : 'bg-slate-700 text-slate-300 border-slate-600'
-                }`}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${autoListen ? 'bg-emerald-400' : 'bg-slate-400'}`} />
-                {autoListen ? 'Live Listening' : 'Paused'}
-              </span>
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-300 mt-1">
               <span className="inline-flex items-center gap-1.5 font-mono text-indigo-200">
                 <Mail className="w-3.5 h-3.5 text-indigo-300" />
                 {mailbox.email || user.email || 'No email configured'}
-              </span>
-              <span className="text-[11px] text-slate-400">
-                ({mailbox.connected ? `${mailbox.provider} Active` : 'Mailbox Disconnected'})
               </span>
               {feed?.synced_at && (
                 <span className="text-[11px] text-slate-400 flex items-center gap-1">
@@ -195,9 +182,6 @@ export default function DashboardLiveListener() {
           {/* AI Executive Summary + Metrics Strip */}
           <div className="rounded-xl bg-indigo-50/70 border border-indigo-100 p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-start gap-3">
-              <div className="p-2 rounded-lg bg-indigo-600 text-white shrink-0 mt-0.5">
-                <Sparkles className="w-4 h-4" />
-              </div>
               <div>
                 <p className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider mb-0.5">
                   AI Activity Brief
@@ -227,7 +211,6 @@ export default function DashboardLiveListener() {
             {/* Column 1: AI Recommendations & Follow-Up Actions */}
             <div className="border border-slate-200/80 rounded-xl p-4 bg-slate-50/40 flex flex-col">
               <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 mb-3">
-                <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
                 AI Recommended Actions
               </h3>
               <div className="space-y-2.5 flex-1">

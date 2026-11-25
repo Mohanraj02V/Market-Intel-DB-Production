@@ -394,8 +394,8 @@ const LqPipelinePage = ({ filter = 'all', embedded = false }) => {
                 onClick={() => setShowBulkCampaignModal(true)}
                 className="px-4 py-2.5 bg-white hover:bg-indigo-50 text-indigo-700 font-extrabold text-xs rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer"
               >
-                <Sparkles className="w-4 h-4 text-indigo-600" />
-                <span>AI Email Campaign (10 / Section)</span>
+                <Mail className="w-4 h-4 text-indigo-600" />
+                <span>Email Campaign</span>
               </button>
             </div>
           </div>
@@ -427,255 +427,277 @@ const LqPipelinePage = ({ filter = 'all', embedded = false }) => {
         </div>
       )}
 
-      {/* Global Activity Dashboard */}
-      {!isManager && (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden p-6">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
-              <Activity className="w-5 h-5 text-indigo-600" />
+      {/* Two-Column Split: Left = Outreach Records List, Right = Global Activity Dashboard */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 flex-1 min-h-0 items-start">
+        {/* Left Side: Outreach Records List */}
+        <div className={`${!isManager ? 'xl:col-span-7 2xl:col-span-8' : 'xl:col-span-12'} bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-0`}>
+          <div className="p-3 border-b border-slate-200/80 bg-slate-50/70 flex flex-col md:flex-row md:items-center justify-between gap-2.5 shrink-0">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1 min-w-0">
+              <div className="relative flex-1 min-w-0">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-3.5 w-3.5 text-slate-400" />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Filter by company, country, industry..."
+                  className="w-full pl-9 pr-8 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 shadow-2xs hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-100 transition"
+                    title="Clear filter"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Quick Status Sub-filters */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleFilterChange('all')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                    activeFilter === 'all'
+                      ? 'bg-indigo-600 text-white shadow-2xs'
+                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  All Outreach ({items.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleFilterChange('verified')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                    activeFilter === 'verified'
+                      ? 'bg-emerald-600 text-white shadow-2xs'
+                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <span>Outreached</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                    activeFilter === 'verified' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'
+                  }`}>
+                    {verifiedCount}
+                  </span>
+                </button>
+              </div>
             </div>
-            <div className="flex-1">
-              <h2 className="text-lg font-black text-slate-800">Global Activity Dashboard</h2>
-              <p className="text-xs font-semibold text-slate-500">Track outreach history across all prospects by date range.</p>
-            </div>
-            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl shadow-sm px-1.5 py-1">
-              <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider pl-1.5 pr-1">Date Range:</label>
-              <input 
-                type="date" 
-                value={startDate}
-                max={new Date().toISOString().split('T')[0]}
-                onChange={(e) => {
-                  setStartDate(e.target.value);
-                  setEndDate('');
-                }}
-                className="px-2 py-1 bg-slate-50 rounded text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-slate-700"
-              />
-              <span className="text-slate-400 font-bold text-xs px-1">to</span>
-              <input 
-                type="date" 
-                max="9999-12-31"
-                min={startDate || undefined}
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                disabled={!startDate}
-                className="px-2 py-1 bg-slate-50 rounded text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-slate-700 disabled:opacity-50"
-              />
+
+            <div className="text-xs font-semibold text-slate-500 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs shrink-0 self-end sm:self-auto">
+              Total: <span className="font-bold text-slate-800">{filteredItems.length}</span>
             </div>
           </div>
 
-          {startDate && endDate ? (
-            <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
-              {groupedDashboardProspects.length > 0 ? (
-                groupedDashboardProspects.map(group => {
-                  return (
-                    <div 
-                      key={group.prospectId} 
-                      className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden transition-all duration-200 shadow-sm px-4 py-2.5 flex items-center justify-between cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-100 group"
-                      onClick={() => navigate(`/outreach-activity/${group.prospectId}`)}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div>
-                          <h4 className="font-extrabold text-slate-900 text-sm group-hover:text-indigo-700 transition-colors">{group.companyName}</h4>
-                          <p className="text-[10px] font-semibold text-slate-500 mt-0.5">
-                            {Object.entries(group.breakdown).map(([type, count]) => `${count} ${type.replace('_MADE', '').replace('_SENT', '')}`).join(' • ')}
+          <div className="overflow-x-auto flex-1">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                  <th className="px-3.5 py-2.5">Prospect &amp; Company Details</th>
+                  <th className="px-3.5 py-2.5">Status</th>
+                  {!isManager && <th className="px-3.5 py-2.5 text-right">Actions</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredItems.length === 0 ? (
+                  <tr>
+                    <td colSpan={isManager ? 2 : 3} className="p-8 text-center text-slate-500 bg-slate-50">
+                      <div className="flex flex-col items-center justify-center">
+                        <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm border border-slate-100 mb-2">
+                          <Activity className="w-5 h-5 text-slate-400" />
+                        </div>
+                        <span className="text-sm font-bold text-slate-700">No records found</span>
+                        <p className="text-xs text-slate-500 mt-0.5">There are currently no prospects matching your criteria.</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredItems.map(item => {
+                    const p = item.prospect;
+                    const isLeadFreeze = item.qualification_status === 'Lead Freeze';
+                    const isLeadQualified = item.qualification_status === 'Lead Qualified';
+
+                    return (
+                      <tr key={item.id} className="hover:bg-slate-50/80 transition">
+                        <td className="px-3.5 py-2.5">
+                          <div className="flex items-start gap-2.5">
+                            <div className="w-7 h-7 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0 mt-0.5">
+                              <Building2 className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <Link to={`/lq-pipeline/${item.id}`} className="font-bold text-indigo-600 hover:text-indigo-800 hover:underline text-xs transition block truncate">
+                                {p.company_name}
+                              </Link>
+                              <p className="text-[10px] text-slate-500 truncate max-w-xs 2xl:max-w-md" title={p.primary_industries || ''}>
+                                {p.country_head_office} &bull; {p.primary_industries || '—'}
+                              </p>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="text-[9px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.2 rounded-md border border-slate-200">
+                                  Calls: {item.calls_logged_count || 0}
+                                </span>
+                                <span className="text-[9px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.2 rounded-md border border-slate-200">
+                                  Emails: {item.emails_sent_count || 0}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-3.5 py-2.5 whitespace-nowrap">
+                          {isLeadQualified ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-semibold text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <CheckCircle className="w-3 h-3 text-emerald-600" /> Lead Qualified
+                            </span>
+                          ) : isLeadFreeze ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-semibold text-[10px] bg-rose-50 text-rose-700 border border-rose-200">
+                              <XCircle className="w-3 h-3 text-rose-600" /> Lead Freeze
+                            </span>
+                          ) : item.email_status && item.email_status !== 'Not Sent' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-semibold text-[10px] bg-blue-50 text-blue-700 border border-blue-200">
+                              <Mail className="w-3 h-3 text-blue-600" /> {item.email_status}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-semibold text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              <Phone className="w-3 h-3 text-indigo-600" /> Ready for Outreach
+                            </span>
+                          )}
+                        </td>
+                        {!isManager && (
+                          <td className="px-3.5 py-2.5 text-right whitespace-nowrap">
+                            <button
+                              onClick={() => openWorkspace(item)}
+                              disabled={isLeadFreeze}
+                              title={isLeadFreeze ? 'Outreach disabled — Prospect is Lead Freeze' : ''}
+                              className={`w-24 justify-center px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition flex items-center gap-1 ml-auto cursor-pointer ${
+                                isLeadFreeze
+                                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                  : isLeadQualified
+                                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                  : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                              }`}
+                            >
+                              {isLeadFreeze ? (
+                                <><XCircle className="w-3 h-3 text-white" /><span>Freeze</span></>
+                              ) : isLeadQualified ? (
+                                <><CheckCircle className="w-3.5 h-3.5 text-white" /><span>Qualified</span></>
+                              ) : (
+                                <><Phone className="w-3 h-3" /><span>Outreach</span></>
+                              )}
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+          <Pagination
+            currentPage={page}
+            totalCount={count}
+            pageSize={50}
+            onPageChange={(newPage) => dispatch(setPage(newPage))}
+          />
+        </div>
+
+        {/* Right Side: Global Activity Dashboard */}
+        {!isManager && (
+          <div className="xl:col-span-5 2xl:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col xl:sticky xl:top-4">
+            <div className="p-4 border-b border-slate-100 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0">
+                  <Activity className="w-4 h-4 text-indigo-600" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-sm font-black text-slate-900">Global Activity Dashboard</h2>
+                  <p className="text-[11px] font-medium text-slate-500">
+                    Track outreach history across all prospects by date range.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-0.5">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={startDate}
+                    max={new Date().toISOString().split('T')[0]}
+                    onChange={(e) => {
+                      setStartDate(e.target.value);
+                      setEndDate('');
+                    }}
+                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-slate-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    End Date
+                  </label>
+                  <input
+                    type="date"
+                    max="9999-12-31"
+                    min={startDate || undefined}
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    disabled={!startDate}
+                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-slate-700 disabled:opacity-50"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 flex-1">
+              {startDate && endDate ? (
+                <div className="space-y-2.5 max-h-[560px] overflow-y-auto pr-1">
+                  {groupedDashboardProspects.length > 0 ? (
+                    groupedDashboardProspects.map(group => (
+                      <div
+                        key={group.prospectId}
+                        className="bg-slate-50 border border-slate-200/80 rounded-xl transition-all duration-200 px-3.5 py-2.5 flex items-center justify-between gap-2 cursor-pointer hover:bg-indigo-50/60 hover:border-indigo-200 group"
+                        onClick={() => navigate(`/outreach-activity/${group.prospectId}`)}
+                      >
+                        <div className="min-w-0">
+                          <h4 className="font-bold text-slate-900 text-xs truncate group-hover:text-indigo-700 transition-colors">
+                            {group.companyName}
+                          </h4>
+                          <p className="text-[10px] font-semibold text-slate-500 mt-0.5 truncate">
+                            {Object.entries(group.breakdown)
+                              .map(([type, count]) => `${count} ${type.replace('_MADE', '').replace('_SENT', '')}`)
+                              .join(' • ')}
                           </p>
                         </div>
+                        <span className="shrink-0 text-[11px] font-bold text-indigo-600 opacity-75 group-hover:opacity-100 transition-opacity">
+                          View &rarr;
+                        </span>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs font-bold text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity">View Timeline &rarr;</span>
-                      </div>
+                    ))
+                  ) : (
+                    <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                      <p className="text-xs font-semibold text-slate-500">
+                        No activities recorded in this date range.
+                      </p>
                     </div>
-                  );
-                })
+                  )}
+                </div>
               ) : (
-                <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-                  <p className="text-sm font-semibold text-slate-500">No activities recorded in this date range.</p>
+                <div className="py-12 px-6 text-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                  <Activity className="w-7 h-7 text-slate-300 mx-auto mb-2" />
+                  <p className="text-xs font-semibold text-slate-600">Select a date range</p>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Choose both a Start Date and an End Date above to view outreach activities.
+                  </p>
                 </div>
               )}
             </div>
-          ) : (
-            <div className="p-8 text-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-              <Activity className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm font-semibold text-slate-500">
-                Please select both a Start Date and an End Date to view activities.
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Table Container */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex-1 flex flex-col min-h-0">
-        <div className="p-3 border-b border-slate-200/80 bg-slate-50/70 flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
-            <div className="relative flex-1 max-w-md">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-3.5 w-3.5 text-slate-400" />
-              </div>
-              <input 
-                type="text" 
-                placeholder="Filter by master prospect name, country, industry..." 
-                className="w-full pl-9 pr-8 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 shadow-2xs hover:border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-              {searchTerm && (
-                <button
-                  type="button"
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-100 transition"
-                  title="Clear filter"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            {/* Quick Status Sub-filters */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
-              <button
-                type="button"
-                onClick={() => handleFilterChange('all')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
-                  activeFilter === 'all'
-                    ? 'bg-indigo-600 text-white shadow-2xs'
-                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                All Outreach ({items.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => handleFilterChange('verified')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                  activeFilter === 'verified'
-                    ? 'bg-emerald-600 text-white shadow-2xs'
-                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                <span>Outreached</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                  activeFilter === 'verified' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'
-                }`}>
-                  {verifiedCount}
-                </span>
-              </button>
-            </div>
           </div>
-
-          <div className="text-xs font-semibold text-slate-500 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs shrink-0 self-end sm:self-auto">
-            Total Records: <span className="font-bold text-slate-800">{filteredItems.length}</span>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto flex-1">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
-                <th className="px-3.5 py-2">Prospect & Company Details</th>
-                <th className="px-3.5 py-2">Status</th>
-                {!isManager && <th className="px-3.5 py-2 text-right">Actions</th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredItems.length === 0 ? (
-                <tr>
-                  <td colSpan={isManager ? 2 : 3} className="p-8 text-center text-slate-500 bg-slate-50">
-                    <div className="flex flex-col items-center justify-center">
-                      <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm border border-slate-100 mb-2">
-                        <Activity className="w-5 h-5 text-slate-400" />
-                      </div>
-                      <span className="text-sm font-bold text-slate-700">No records found</span>
-                      <p className="text-xs text-slate-500 mt-0.5">There are currently no prospects matching your criteria.</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                filteredItems.map(item => {
-                  const p = item.prospect;
-                  const isLeadFreeze = item.qualification_status === 'Lead Freeze';
-                  const isLeadQualified = item.qualification_status === 'Lead Qualified';
-
-                  return (
-                    <tr key={item.id} className="hover:bg-slate-50/80 transition">
-                      <td className="px-3.5 py-2">
-                        <div className="flex items-start gap-2.5">
-                          <div className="w-7 h-7 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0 mt-0.5">
-                            <Building2 className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <Link to={`/lq-pipeline/${item.id}`} className="font-bold text-indigo-600 hover:text-indigo-800 hover:underline text-xs transition">
-                              {p.company_name}
-                            </Link>
-                            <p className="text-[10px] text-slate-500 truncate max-w-md" title={p.primary_industries || ''}>
-                              {p.country_head_office} &bull; {p.primary_industries || '—'}
-                            </p>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="text-[9px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.2 rounded-md border border-slate-200">
-                                Calls Logged: {item.calls_logged_count || 0}
-                              </span>
-                              <span className="text-[9px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.2 rounded-md border border-slate-200">
-                                Emails Sent: {item.emails_sent_count || 0}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-3.5 py-2">
-                        {isLeadQualified ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-semibold text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <CheckCircle className="w-3 h-3 text-emerald-600" /> Lead Qualified
-                          </span>
-                        ) : isLeadFreeze ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-semibold text-[10px] bg-rose-50 text-rose-700 border border-rose-200">
-                            <XCircle className="w-3 h-3 text-rose-600" /> Lead Freeze
-                          </span>
-                        ) : item.email_status && item.email_status !== 'Not Sent' ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-semibold text-[10px] bg-blue-50 text-blue-700 border border-blue-200">
-                            <Mail className="w-3 h-3 text-blue-600" /> {item.email_status}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-semibold text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200">
-                            <Phone className="w-3 h-3 text-indigo-600" /> Ready for Outreach
-                          </span>
-                        )}
-                      </td>
-                      {!isManager && (
-                        <td className="px-3.5 py-2 text-right">
-                          <button
-                            onClick={() => openWorkspace(item)}
-                            disabled={isLeadFreeze}
-                            title={isLeadFreeze ? 'Outreach disabled — Prospect is Lead Freeze' : ''}
-                            className={`w-28 justify-center px-2.5 py-1 rounded text-[10px] font-bold transition flex items-center gap-1 ml-auto cursor-pointer ${
-                              isLeadFreeze 
-                                ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
-                                : isLeadQualified 
-                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white' 
-                                : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                            }`}
-                          >
-                            {isLeadFreeze ? (
-                              <><XCircle className="w-3 h-3 text-white" /><span>Lead Freeze</span></>
-                            ) : isLeadQualified ? (
-                              <><CheckCircle className="w-3.5 h-3.5 text-white" /> <span>Qualified</span></>
-                            ) : (
-                              <><Phone className="w-3 h-3" /> Outreach</>
-                            )}
-                          </button>
-                        </td>
-                      )}
-                    </tr>
-                );
-              }))}
-            </tbody>
-          </table>
-        </div>
-        <Pagination 
-          currentPage={page} 
-          totalCount={count} 
-          pageSize={50} 
-          onPageChange={(newPage) => dispatch(setPage(newPage))} 
-        />
+        )}
       </div>
         </>
       )}

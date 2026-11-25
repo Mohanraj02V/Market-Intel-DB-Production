@@ -108,10 +108,6 @@ const PreDashboardPage = () => {
       {/* Header */}
       <div className="w-full mx-auto mb-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-bold uppercase tracking-wider mb-1.5">
-            <Flame className="w-3.5 h-3.5 text-orange-500" />
-            Performance Tracking Active
-          </div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
             Engagement <span className="text-indigo-600">Dashboard</span>
           </h1>

@@ -1,45 +1,25 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Mail, ShieldCheck, CheckCircle2, AlertCircle, RefreshCw, Trash2, Plus, ExternalLink } from 'lucide-react';
+import { Mail, CheckCircle2, AlertCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
 
 const MailboxSettings = () => {
   const [gmailStatus, setGmailStatus] = useState({ is_connected: false, email: '' });
-  const [loadingGmail, setLoadingGmail] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
 
-  const [mailAccounts, setMailAccounts] = useState([]);
-  const [loadingAccounts, setLoadingAccounts] = useState(false);
-
   const fetchGmailStatus = useCallback(async () => {
-    setLoadingGmail(true);
     try {
       const res = await api.get('/auth/google/gmail/status/');
       setGmailStatus(res.data);
     } catch (err) {
       console.error('Failed to fetch Gmail status', err);
-    } finally {
-      setLoadingGmail(false);
-    }
-  }, []);
-
-  const fetchMailAccounts = useCallback(async () => {
-    setLoadingAccounts(true);
-    try {
-      const res = await api.get('/auth/mail-account/');
-      setMailAccounts(res.data || []);
-    } catch (err) {
-      console.error('Failed to fetch mail accounts', err);
-    } finally {
-      setLoadingAccounts(false);
     }
   }, []);
 
   useEffect(() => {
     fetchGmailStatus();
-    fetchMailAccounts();
-  }, [fetchGmailStatus, fetchMailAccounts]);
+  }, [fetchGmailStatus]);
 
   const handleConnectGmail = async () => {
     setConnecting(true);
@@ -64,7 +44,6 @@ const MailboxSettings = () => {
       await api.post('/auth/google/gmail/disconnect/');
       toast.success('Gmail mailbox disconnected.');
       fetchGmailStatus();
-      fetchMailAccounts();
     } catch (err) {
       toast.error('Failed to disconnect Gmail.');
     } finally {
@@ -144,61 +123,6 @@ const MailboxSettings = () => {
             </div>
           )}
         </div>
-      </div>
-
-      {/* Connected Mailboxes */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-extrabold text-slate-900 tracking-tight">Active Mailboxes</h3>
-            <p className="text-xs text-slate-500 font-medium">
-              Mail accounts currently available for your user session.
-            </p>
-          </div>
-          <button
-            onClick={() => { fetchGmailStatus(); fetchMailAccounts(); }}
-            className="p-2 hover:bg-slate-100 rounded-xl text-slate-600 transition"
-            title="Refresh accounts"
-          >
-            <RefreshCw className={`w-4 h-4 ${loadingAccounts || loadingGmail ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
-
-        {mailAccounts.length === 0 ? (
-          <div className="text-center py-6 text-xs text-slate-400 font-medium">
-            No mail accounts configured yet. Connect Gmail above to get started.
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
-            {mailAccounts.map((acc) => (
-              <div key={acc.id} className="p-4 flex items-center justify-between bg-white hover:bg-slate-50/60 transition">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs bg-sky-50 text-sky-600 border border-sky-100">
-                    G
-                  </div>
-                  <div>
-                    <div className="font-extrabold text-slate-900 text-xs flex items-center gap-2">
-                      {acc.name || acc.display_name}
-                      {acc.provider === 'GMAIL_OAUTH' && (
-                        <span className="text-[10px] font-bold px-1.5 py-0.2 bg-blue-50 text-blue-700 border border-blue-200 rounded">
-                          Google Mail
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-[11px] text-slate-500 font-medium">{acc.email_address}</div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                    Connected
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );
