@@ -71,6 +71,7 @@ test_*.db
 backend/settings_*test*.py
 backend/settings_local*.py
 **/settings_*test*.py
+!backend/config/settings_test.py
 **/settings_local*.py
 
 # Django generated static & user media / attachments
