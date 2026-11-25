@@ -373,9 +373,9 @@ export default function TranscriptionPage() {
 
       {/* Search & Filter Bar */}
       <div className="bg-white rounded-2xl border border-slate-200/90 p-3.5 shadow-2xs space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2.5">
           {/* Search */}
-          <div className="lg:col-span-2 relative">
+          <div className="sm:col-span-2 lg:col-span-4 relative min-w-0">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -402,7 +402,7 @@ export default function TranscriptionPage() {
               setProviderFilter(e.target.value);
               setPage(1);
             }}
-            className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+            className="lg:col-span-2 min-w-0 px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
           >
             <option value="">All Providers</option>
             <option value="GOOGLE_MEET">Google Meet (CBE)</option>
@@ -416,7 +416,7 @@ export default function TranscriptionPage() {
               setStatusFilter(e.target.value);
               setPage(1);
             }}
-            className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+            className="lg:col-span-2 min-w-0 px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
           >
             <option value="">All Statuses</option>
             <option value="COMPLETED">Completed</option>
@@ -428,7 +428,7 @@ export default function TranscriptionPage() {
           </select>
 
           {/* Date range */}
-          <div className="flex items-center gap-1.5">
+          <div className="sm:col-span-2 lg:col-span-2 grid grid-cols-2 gap-1.5 min-w-0">
             <input
               type="date"
               value={dateFrom}
@@ -437,7 +437,7 @@ export default function TranscriptionPage() {
                 setPage(1);
               }}
               title="From date"
-              className="w-full px-2.5 py-2 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+              className="w-full min-w-0 px-2 py-2 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
             />
             <input
               type="date"
@@ -447,7 +447,7 @@ export default function TranscriptionPage() {
                 setPage(1);
               }}
               title="To date"
-              className="w-full px-2.5 py-2 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+              className="w-full min-w-0 px-2 py-2 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
             />
           </div>
 
@@ -458,7 +458,7 @@ export default function TranscriptionPage() {
               setOrdering(e.target.value);
               setPage(1);
             }}
-            className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+            className="lg:col-span-2 min-w-0 px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
           >
             <option value="-scheduled_start">Newest First</option>
             <option value="scheduled_start">Oldest First</option>
